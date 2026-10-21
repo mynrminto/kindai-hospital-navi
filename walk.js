@@ -121,9 +121,10 @@
     const LA = (L - H) / 2;
     const e = { alongZ, x0, z0, x1, z1, L, W, H, LA, up: f < Math.max(...lift.floors), down: f > Math.min(...lift.floors) };
     // 局所座標（s：上り方向の長さ、t：横）→ 世界座標
-    e.P = (s, t, y) => alongZ ? new THREE.Vector3((x0 + x1) / 2 + t, y, z0 + s) : new THREE.Vector3(x0 + s, y, (z0 + z1) / 2 + t);
-    e.local = (x, z) => alongZ ? [z - z0, x - (x0 + x1) / 2] : [x - x0, z - (z0 + z1) / 2];
-    e.yaw = (sign) => alongZ ? (sign > 0 ? 0 : Math.PI) : (sign > 0 ? Math.PI / 2 : -Math.PI / 2);
+    // 上りレーンは t<0 側、乗り口は s=0 側。s は区画の奥（z1 / x1）から測る（実際の乗り口の向きに合わせる）
+    e.P = (s, t, y) => alongZ ? new THREE.Vector3((x0 + x1) / 2 + t, y, z1 - s) : new THREE.Vector3(x1 - s, y, (z0 + z1) / 2 + t);
+    e.local = (x, z) => alongZ ? [z1 - z, x - (x0 + x1) / 2] : [x1 - x, z - (z0 + z1) / 2];
+    e.yaw = (sign) => alongZ ? (sign > 0 ? Math.PI : 0) : (sign > 0 ? -Math.PI / 2 : Math.PI / 2);
     return e;
   }
   // エスカレーター乗り口・降り口に立つ位置（画像px）と向き
