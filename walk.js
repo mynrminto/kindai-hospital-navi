@@ -33,12 +33,47 @@
     const isBeige = (p) => Math.abs(p[0] - BEIGE[0]) < 5 && Math.abs(p[1] - BEIGE[1]) < 5 && Math.abs(p[2] - BEIGE[2]) < 6;
     const cols = Math.ceil(fl.w / CELL), rows = Math.ceil(fl.h / CELL);
     const walk = new Uint8Array(cols * rows);
+    // 案内アイコン・文字の色（濃い色や鮮やかな色）。部屋の塗りは淡い色なので区別できる
+    const isIcon = (p) => { const l = (p[0] + p[1] + p[2]) / 3, sat = Math.max(...p) - Math.min(...p); return l < 200 || sat > 90; };
+    const iconish = new Uint8Array(cols * rows);
     for (let r = 0; r < rows; r++) for (let q = 0; q < cols; q++) {
       // マスの5点のうち3点以上がベージュなら廊下
       const x = q * CELL, y = r * CELL, h = CELL >> 1;
-      let n = 0;
-      for (const [dx, dy] of [[h, h], [1, 1], [CELL - 2, 1], [1, CELL - 2], [CELL - 2, CELL - 2]]) if (isBeige(px(x + dx, y + dy))) n++;
+      let n = 0, ic = 0;
+      for (const [dx, dy] of [[h, h], [1, 1], [CELL - 2, 1], [1, CELL - 2], [CELL - 2, CELL - 2]]) {
+        const p = px(x + dx, y + dy);
+        if (isBeige(p)) n++; else if (isIcon(p)) ic++;
+      }
       walk[r * cols + q] = n >= 3 ? 1 : 0;
+      // 2 = ほぼ濃い色（アイコンや部屋名の帯の中）、1 = アイコンの縁など
+      iconish[r * cols + q] = ic >= 4 ? 2 : ic >= 2 && n + ic >= 3 ? 1 : 0;
+    }
+    // 廊下に置かれたアイコン・文字（自販機・電話・EV表示など）は通路として扱う（壁にしない）
+    // 部屋名の帯（横に長い濃い色の四角）は対象外
+    const label = new Uint8Array(cols * rows), seenL = new Uint8Array(cols * rows);
+    for (let k0 = 0; k0 < walk.length; k0++) {
+      if (iconish[k0] !== 2 || seenL[k0]) continue;
+      const comp = [k0]; seenL[k0] = 1;
+      let minQ = 1e9, maxQ = -1;
+      for (let i = 0; i < comp.length; i++) {
+        const k = comp[i], x = k % cols;
+        minQ = Math.min(minQ, x); maxQ = Math.max(maxQ, x);
+        for (const j of [k + 1, k - 1, k + cols, k - cols]) {
+          if (j < 0 || j >= walk.length || Math.abs((j % cols) - x) > 1 || seenL[j] || iconish[j] !== 2) continue;
+          seenL[j] = 1; comp.push(j);
+        }
+      }
+      if (maxQ - minQ >= 8) comp.forEach((k) => (label[k] = 1));
+    }
+    for (let it = 0; it < 6; it++) {
+      const add = [];
+      for (let k = 0; k < walk.length; k++) {
+        if (walk[k] || !iconish[k] || label[k]) continue;
+        const x = k % cols;
+        if ((x > 0 && walk[k - 1]) || (x < cols - 1 && walk[k + 1]) || walk[k - cols] || walk[k + cols]) add.push(k);
+      }
+      if (!add.length) break;
+      add.forEach((k) => (walk[k] = 1));
     }
     fillHoles(walk, cols, rows);
     const esc = findEscalator(f, px, cols, rows, walk);
@@ -658,7 +693,8 @@
         const [x1, y1] = r.pts[i], [x2, y2] = r.pts[i + 1], n = Math.ceil(Math.hypot(x2 - x1, y2 - y1) / CELL) + 1;
         for (let k = 0; k <= n; k++) {
           const c = Math.floor((y1 + (y2 - y1) * k / n) / CELL) * info.cols + Math.floor((x1 + (x2 - x1) * k / n) / CELL);
-          if (info.walk[c] === 1) info.walk[c] = 2;
+          // 通り道とそのすぐ脇（約0.8m）に残った小さな障害物は取り除く
+          for (const j of [c, c - 1, c + 1, c - info.cols, c + info.cols]) if (info.walk[j] === 1 || info.walk[j] === 0) info.walk[j] = 2;
         }
       }
     }
