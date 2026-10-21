@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>近大病院 院内ナビ（非公式）</title>
+<meta name="description" content="近畿大学病院（堺市南区・おおさかメディカルキャンパス）の院内を、現在地と目的地を選ぶだけで案内する非公式ナビ。">
+<meta name="theme-color" content="#0f6e6a">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230f6e6a'/%3E%3Cpath d='M32 12c-8 0-14 6-14 14 0 10 14 26 14 26s14-16 14-26c0-8-6-14-14-14zm0 19a5 5 0 110-10 5 5 0 010 10z' fill='%23fff'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand">
+    <span class="logo" aria-hidden="true">
+      <svg viewBox="0 0 24 24"><path d="M12 2C8.1 2 5 5.1 5 9c0 5.2 7 13 7 13s7-7.8 7-13c0-3.9-3.1-7-7-7zm0 9.5A2.5 2.5 0 1112 6.5a2.5 2.5 0 010 5z"/></svg>
+    </span>
+    <div>
+      <h1>近大病院 院内ナビ</h1>
+      <p class="sub">近畿大学病院（堺市南区三原台）・非公式</p>
+    </div>
+  </div>
+</header>
+
+<main>
+  <section class="card picker" aria-label="出発地と目的地">
+    <div class="field">
+      <span class="dot from" aria-hidden="true"></span>
+      <label for="from">いまいる場所</label>
+      <select id="from"></select>
+    </div>
+    <button class="swap" id="swap" type="button" aria-label="出発地と目的地を入れ替える">
+      <svg viewBox="0 0 24 24"><path d="M7 4v12.2l-2.6-2.6L3 15l5 5 5-5-1.4-1.4L9 16.2V4H7zm10 16V7.8l2.6 2.6L21 9l-5-5-5 5 1.4 1.4L15 7.8V20h2z"/></svg>
+    </button>
+    <div class="field">
+      <span class="dot to" aria-hidden="true"></span>
+      <label for="to">行きたい場所</label>
+      <select id="to"></select>
+    </div>
+    <div class="chips" id="chips" aria-label="よく使う行き先"></div>
+    <label class="toggle">
+      <input type="checkbox" id="bf">
+      <span class="sw" aria-hidden="true"></span>
+      <span>エレベーターのみ（車いす・ベビーカー・杖の方）</span>
+    </label>
+  </section>
+
+  <section class="card result" id="result" hidden>
+    <div class="summary" id="summary"></div>
+    <div class="tabs" id="tabs" role="tablist" aria-label="表示する階"></div>
+    <div class="mapwrap">
+      <svg id="map" viewBox="0 0 430 370" role="img" aria-label="フロア模式図"></svg>
+    </div>
+    <ol class="steps" id="steps"></ol>
+    <div class="actions">
+      <button type="button" id="share">この経路のリンクをコピー</button>
+    </div>
+  </section>
+
+  <section class="card empty" id="empty">
+    <p>上で <b>いまいる場所</b> と <b>行きたい場所</b> を選ぶと、通る階と道順を表示します。</p>
+    <p class="hint">駅から来た方は「駅からのデッキ入口」を選んでください。初めての受診は <b>2号館3階 総合受付</b> へ。</p>
+  </section>
+
+  <section class="note">
+    <h2>ご利用にあたって</h2>
+    <ul>
+      <li>診療科・施設の <b>階と建物</b> は近畿大学病院 公式サイトのフロアマップ（2026年10月時点）に基づきます。</li>
+      <li>建物同士の <b>位置関係・連絡通路・エレベーター/エスカレーターの位置・距離と所要時間</b> は公開情報からの <b>推定</b> です。実際の院内表示とスタッフの案内を優先してください。</li>
+      <li>トイレ・AED・自動支払機などは各階にありますが、正確な場所は院内の案内表示をご確認ください。</li>
+      <li>正式な情報：<a href="https://www.med.kindai.ac.jp/floormap_facility.html" target="_blank" rel="noopener">公式フロアマップ</a> ／ <a href="https://www.med.kindai.ac.jp/traffic_access.html" target="_blank" rel="noopener">交通アクセス</a></li>
+    </ul>
+    <p class="fine">本アプリは近畿大学・近畿大学病院とは関係のない個人による非公式ツールです。</p>
+  </section>
+</main>
+
+<script src="data.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
