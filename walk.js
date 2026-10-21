@@ -42,7 +42,8 @@
     }
     fillHoles(walk, cols, rows);
     const esc = findEscalator(f, px, cols, rows, walk);
-    floorCache[f] = { fl, img, px, cols, rows, walk, esc };
+    const shops = findShops(f, px, cols, rows, walk, fl.w, fl.h);
+    floorCache[f] = { fl, img, px, cols, rows, walk, esc, shops };
     return floorCache[f];
   }
 
@@ -78,7 +79,7 @@
         const x = x1 + (x2 - x1) * k / n, y = y1 + (y2 - y1) * k / n;
         const q0 = Math.floor(x / CELL), r0 = Math.floor(y / CELL);
         for (let r = r0 - rad; r <= r0 + rad; r++) for (let q = q0 - rad; q <= q0 + rad; q++) {
-          if (r >= 0 && q >= 0 && r < rows && q < cols && walk[r * cols + q] !== 3) walk[r * cols + q] = 2;
+          if (r >= 0 && q >= 0 && r < rows && q < cols && walk[r * cols + q] < 3) walk[r * cols + q] = 2;
         }
       }
     }
@@ -276,6 +277,163 @@
     return mesh;
   }
 
+
+  /* ---------- 売店（ガラス張りの店構え） ---------- */
+  const SHOP_IDS = ["seven", "greenleaves"];
+  // 店の区画をフロアマップの部屋の色から探し、walk=4 として印を付ける
+  function findShops(f, px, cols, rows, walk, W, H) {
+    const out = [];
+    const lumOf = (p) => (p[0] + p[1] + p[2]) / 3;
+    const isBeige = (p) => Math.abs(p[0] - BEIGE[0]) < 6 && Math.abs(p[1] - BEIGE[1]) < 6 && Math.abs(p[2] - BEIGE[2]) < 7;
+    for (const p of opts.places) {
+      if (p.f !== f || !SHOP_IDS.includes(p.id)) continue;
+      // 種：行き先の点の近くで部屋の色をしている画素
+      let seed = null;
+      for (let d = 0; d <= 40 && !seed; d += 2) for (let dy = -d; dy <= d && !seed; dy += 2) for (let dx = -d; dx <= d && !seed; dx += 2) {
+        const x = p.at[0] + dx, y = p.at[1] + dy;
+        if (x < 0 || y < 0 || x >= W || y >= H) continue;
+        const c = px(x, y), l = lumOf(c);
+        if (!isBeige(c) && l > 150 && l < 250) seed = [x, y, c];
+      }
+      if (!seed) continue;
+      // 画素単位の塗りつぶし（部屋の境界線で止まる）
+      const base = seed[2], seen = new Uint8Array(W * H), stack = [seed[1] * W + seed[0]];
+      seen[stack[0]] = 1;
+      const count = new Uint16Array(cols * rows);
+      let n = 0;
+      while (stack.length && n < 150000) {
+        const i = stack.pop(), x = i % W, y = (i / W) | 0;
+        n++; count[Math.floor(y / CELL) * cols + Math.floor(x / CELL)]++;
+        for (const j of [i + 1, i - 1, i + W, i - W]) {
+          if (j < 0 || j >= W * H || seen[j]) continue;
+          const jx = j % W; if (Math.abs(jx - x) > 1) continue;
+          const c = px(jx, (j / W) | 0);
+          if (Math.abs(c[0] - base[0]) + Math.abs(c[1] - base[1]) + Math.abs(c[2] - base[2]) > 12) continue;
+          seen[j] = 1; stack.push(j);
+        }
+      }
+      if (n >= 150000) continue;
+      const cells = new Set();
+      for (let k = 0; k < count.length; k++) if (count[k] >= CELL * CELL * 0.35 && !walk[k]) cells.add(k);
+      // 中の文字で抜けたマスを埋める
+      for (let pass = 0; pass < 2; pass++) for (let k = 0; k < count.length; k++) {
+        if (cells.has(k) || walk[k]) continue;
+        const nb = [k - 1, k + 1, k - cols, k + cols].filter((j) => cells.has(j)).length;
+        if (nb >= 3) cells.add(k);
+      }
+      if (cells.size < 6) continue;
+      // 店と廊下の間の境界線のマスも店に含め、店先が廊下に直接面するようにする
+      const add = [];
+      for (let k = 0; k < walk.length; k++) {
+        if (walk[k] || cells.has(k)) continue;
+        const nb = [k - 1, k + 1, k - cols, k + cols];
+        if (nb.some((j) => cells.has(j)) && nb.some((j) => walk[j] === 1 || walk[j] === 2)) add.push(k);
+      }
+      add.forEach((k) => cells.add(k));
+      for (const c of cells) walk[c] = 4;
+      const m = p.name.match(/（(.+?)）/);
+      out.push({ id: p.id, place: p, label: m ? m[1] : (p.short || p.name), cells });
+    }
+    return out;
+  }
+
+  // 廊下（またはエスカレーター区画）と店の境目の線分：[x, y, horiz, len, nx, nz, meta]（画像px）
+  function frontSegs(info) {
+    const { cols, rows, walk } = info;
+    const cellOf = (q, r) => (q >= 0 && r >= 0 && q < cols && r < rows ? walk[r * cols + q] : 0);
+    const shopAt = (q, r) => (info.shops || []).find((sh) => sh.cells.has(r * cols + q));
+    const isCorr = (q, r) => { const v = cellOf(q, r); return v === 1 || v === 2 || v === 3; };
+    const out = [];
+    for (let r = 0; r < rows; r++) for (const side of [-1, 1]) {
+      let start = -1, sh = null;
+      for (let q = 0; q <= cols; q++) {
+        const edge = q < cols && isCorr(q, r) && cellOf(q, r + side) === 4;
+        if (edge && start < 0) { start = q; sh = cellOf(q, r) === 3 ? null : shopAt(q, r + side); }
+        if (!edge && start >= 0) { out.push([start * CELL, (side < 0 ? r : r + 1) * CELL, true, (q - start) * CELL, 0, -side, sh ? { front: sh } : { plain: true }]); start = -1; }
+      }
+    }
+    for (let q = 0; q < cols; q++) for (const side of [-1, 1]) {
+      let start = -1, sh = null;
+      for (let r = 0; r <= rows; r++) {
+        const edge = r < rows && isCorr(q, r) && cellOf(q + side, r) === 4;
+        if (edge && start < 0) { start = r; sh = cellOf(q, r) === 3 ? null : shopAt(q + side, r); }
+        if (!edge && start >= 0) { out.push([(side < 0 ? q : q + 1) * CELL, start * CELL, false, (r - start) * CELL, -side, 0, sh ? { front: sh } : { plain: true }]); start = -1; }
+      }
+    }
+    return out;
+  }
+  // 店の入口（いちばん長い店先の中央）の前に立つ位置（画像px）と、店の方を向く向き
+  function shopDoor(info, shop) {
+    let best = null;
+    for (const f of frontSegs(info)) if (f[6].front === shop && (!best || f[3] > best[3])) best = f;
+    if (!best) return null;
+    const [x, y, horiz, len, nx, nz] = best;
+    const mx = horiz ? x + len / 2 : x, my = horiz ? y : y + len / 2;
+    return { x: mx + nx * 3.4 / M, y: my + nz * 3.4 / M, heading: Math.atan2(-nx, -nz) };
+  }
+  // 廊下のマスだけを通る最短の道（画像px の点列）
+  function corridorPath(info, from, to) {
+    const { cols, rows, walk } = info;
+    const ok = (k) => walk[k] === 1 || walk[k] === 2;
+    const cell = ([x, y]) => Math.floor(y / CELL) * cols + Math.floor(x / CELL);
+    const s0 = cell(from), t0 = cell(to);
+    const prev = new Int32Array(cols * rows).fill(-1), q = [s0];
+    prev[s0] = s0;
+    for (let h = 0; h < q.length; h++) {
+      const k = q[h];
+      if (k === t0) break;
+      const x = k % cols;
+      for (const j of [k + 1, k - 1, k + cols, k - cols]) {
+        if (j < 0 || j >= cols * rows || prev[j] >= 0 || Math.abs((j % cols) - x) > 1 || (!ok(j) && j !== t0)) continue;
+        prev[j] = k; q.push(j);
+      }
+    }
+    if (prev[t0] < 0) return null;
+    const path = [];
+    for (let k = t0; k !== s0; k = prev[k]) path.push(k);
+    path.reverse();
+    return path.filter((_, i) => i % 3 === 2).map((k) => [((k % cols) + 0.5) * CELL, (((k / cols) | 0) + 0.5) * CELL]);
+  }
+
+  // 商品棚の絵（キャンバス）
+  function shelfTexture() {
+    const c = document.createElement("canvas");
+    c.width = 256; c.height = 256;
+    const g = c.getContext("2d");
+    g.fillStyle = "#f4f4f2"; g.fillRect(0, 0, 256, 256);
+    const pal = ["#e8574d", "#f2b134", "#4aa3df", "#6cc070", "#ffffff", "#f7d9a8", "#9b6fd1", "#ef8fb0", "#2f6fb0", "#f5f0e1"];
+    for (let tier = 0; tier < 5; tier++) {
+      const y0 = tier * 51;
+      g.fillStyle = "#c9cdd2"; g.fillRect(0, y0 + 46, 256, 5);
+      for (let x = 2; x < 254;) {
+        const w = 8 + Math.floor(Math.random() * 14), h = 22 + Math.floor(Math.random() * 20);
+        g.fillStyle = pal[Math.floor(Math.random() * pal.length)];
+        g.fillRect(x, y0 + 46 - h, w - 2, h);
+        g.fillStyle = "rgba(255,255,255,.35)"; g.fillRect(x + 1, y0 + 46 - h + 3, 2, h - 6);
+        x += w;
+      }
+    }
+    const t = new THREE.CanvasTexture(c);
+    t.wrapS = THREE.RepeatWrapping;
+    return t;
+  }
+  // 店の看板（白地に紺の文字。ロゴは使わない）
+  function fasciaSign(text, len) {
+    const c = document.createElement("canvas");
+    const H = 96, W = Math.max(256, Math.round(len / 0.36 * H));
+    c.width = Math.min(2048, W); c.height = H;
+    const g = c.getContext("2d");
+    g.fillStyle = "#ffffff"; g.fillRect(0, 0, c.width, H);
+    g.fillStyle = "#004f80"; g.fillRect(0, H - 10, c.width, 10);
+    g.fillStyle = "#004f80";
+    g.font = `bold 52px "BIZ UDPGothic", "Hiragino Sans", sans-serif`;
+    g.textAlign = "center"; g.textBaseline = "middle";
+    g.fillText(text, c.width / 2, H / 2 - 4, c.width - 40);
+    const tex = new THREE.CanvasTexture(c);
+    tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+    return new THREE.MeshBasicMaterial({ map: tex });
+  }
+
   // 床・天井用の模様（キャンバスで作るタイル）
   function tileTexture(draw, size, repeatM, w, h) {
     const c = document.createElement("canvas");
@@ -314,6 +472,8 @@
   function buildInterior(info) {
     const { cols, rows, walk, px } = info;
     const isW = (q, r) => q >= 0 && r >= 0 && q < cols && r < rows && walk[r * cols + q] > 0;
+    const cellOf = (q, r) => (q >= 0 && r >= 0 && q < cols && r < rows ? walk[r * cols + q] : 0);
+    const shopAt = (q, r) => (info.shops || []).find((sh) => sh.cells.has(r * cols + q));
     // 壁の向こうが何か：屋外（白）なら窓、部屋なら扉を付ける
     const sideInfo = (q, r) => {
       const p = px(Math.max(0, q) * CELL + (CELL >> 1), Math.max(0, r) * CELL + (CELL >> 1));
@@ -333,7 +493,7 @@
       let start = -1, si = null;
       for (let q = 0; q <= cols; q++) {
         const edge = q < cols && isW(q, r) && !isW(q, r + side);
-        if (edge && start < 0) { start = q; si = sideInfo(q, r + side); }
+        if (edge && start < 0) { start = q; si = { ...sideInfo(q, r + side), inShop: cellOf(q, r) === 4 }; }
         if (!edge && start >= 0) { push(start * CELL, (side < 0 ? r : r + 1) * CELL, true, (q - start) * CELL, 0, -side, si); start = -1; }
       }
     }
@@ -341,10 +501,14 @@
       let start = -1, si = null;
       for (let r = 0; r <= rows; r++) {
         const edge = r < rows && isW(q, r) && !isW(q + side, r);
-        if (edge && start < 0) { start = r; si = sideInfo(q + side, r); }
+        if (edge && start < 0) { start = r; si = { ...sideInfo(q + side, r), inShop: cellOf(q, r) === 4 }; }
         if (!edge && start >= 0) { push((side < 0 ? q : q + 1) * CELL, start * CELL, false, (r - start) * CELL, -side, 0, si); start = -1; }
       }
     }
+
+    // 廊下と店の境目は店構え（ガラス張り）にする
+    for (const f of frontSegs(info)) push(...f);
+    const extra = [];
 
     // 部品を種類ごとにまとめて InstancedMesh にする
     const parts = {};
@@ -359,8 +523,37 @@
       return m;
     };
     const WOOD = [0.80, 0.66, 0.48], WHITE = [0.96, 0.95, 0.93];
+    const longest = {};
+    for (const sg of segs) if (sg.front && (!longest[sg.front.id] || longest[sg.front.id].len < sg.len)) longest[sg.front.id] = sg;
     for (const sg of segs) {
       const L = sg.len;
+      if (sg.front) {
+        // 店構え：腰の低い台、大きなガラス、縦の桟、上に看板帯
+        const hasDoor = longest[sg.front.id] === sg && L >= 1.5, d0 = L / 2 - 0.95, d1 = L / 2 + 0.97;
+        for (const [b0, b1] of hasDoor ? [[0, d0], [d1, L]] : [[0, L]]) if (b1 > b0) add("frame", onSeg(sg, b0, b1, 0, 0.25, -0.05, 0.1), [0.35, 0.37, 0.4]);
+        add("shopglass", onSeg(sg, 0, L, 0.25, 2.35, -0.01, 0.02), null);
+        for (let a = 0; a <= L + 1e-6; a += 1.2) add("frame", onSeg(sg, Math.max(0, a - 0.03), Math.min(L, a + 0.03), 0.25, 2.35, -0.03, 0.06), [0.72, 0.74, 0.76]);
+        add("frame", onSeg(sg, 0, L, 2.35, WALL_H, -0.06, 0.12), [0.97, 0.97, 0.96]);
+        if (hasDoor) {
+          // 自動ドア（中央）と看板
+          const a = L / 2;
+          add("frame", onSeg(sg, a - 0.95, a + 0.95, 2.2, 2.35, -0.04, 0.1), [0.45, 0.47, 0.5]);
+          for (const e of [a - 0.95, a, a + 0.92]) add("frame", onSeg(sg, e, e + 0.05, 0, 2.2, -0.04, 0.08), [0.45, 0.47, 0.5]);
+          const sign = new THREE.Mesh(new THREE.PlaneGeometry(Math.min(L - 0.2, 6), 0.4), fasciaSign(sg.front.label, Math.min(L - 0.2, 6)));
+          const mid = sg.horiz ? [sg.x + a, sg.z] : [sg.x, sg.z + a];
+          sign.position.set(mid[0] + sg.nx * 0.07, 2.58, mid[1] + sg.nz * 0.07);
+          sign.rotation.y = Math.atan2(sg.nx, sg.nz);
+          extra.push(sign);
+        }
+        continue;
+      }
+      if (sg.plain) { add("wall", onSeg(sg, 0, L, 0, WALL_H, -0.06, 0.12), WHITE); continue; }
+      if (sg.inShop) {
+        // 店の奥の壁：白い壁に飲料・商品の壁面棚
+        add("wall", onSeg(sg, 0, L, 0, WALL_H, -0.06, 0.12), WHITE);
+        if (L > 0.8) add("shelf", onSeg(sg, 0.1, L - 0.1, 0, 2.0, 0.06, 0.55), null);
+        continue;
+      }
       // 壁本体（上は白、下1mは部屋の色の腰壁）
       add("wall", onSeg(sg, 0, L, 0, WALL_H, -0.06, 0.12), WHITE);
       if (sg.outside) {
@@ -392,6 +585,15 @@
     const nearWell = (q, r) => { for (let dr = -3; dr <= 3; dr++) for (let dq = -3; dq <= 3; dq++) if (walk[(r + dr) * cols + q + dq] === 3) return true; return false; };
     const nearRoute = (q, r, k) => { for (let dr = -k; dr <= k; dr++) for (let dq = -k; dq <= k; dq++) if (walk[(r + dr) * cols + q + dq] === 2) return true; return false; };
     for (let r = 2; r < rows - 2; r++) for (let q = 2; q < cols - 2; q++) {
+      if (walk[r * cols + q] === 4) {
+        // 店内：白い床、照明、商品棚（列ごと）
+        const x = (q + 0.5) * CELL * M, z = (r + 0.5) * CELL * M;
+        add("shopfloor", m4().makeScale(CELL * M, 0.01, CELL * M).setPosition(x, 0.006, z), null);
+        if (q % 3 === 1 && r % 2 === 1) add("light", m4().makeScale(0.5, 0.02, 1.4).setPosition(x, WALL_H - 0.02, z), null);
+        const inner = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [1, -1], [-1, 1]].every(([dq, dr]) => cellOf(q + dq, r + dr) === 4);
+        if (inner && r % 3 === 1) add("shelf", m4().makeScale(CELL * M, 1.45, 0.7).setPosition(x, 0.725, z), null);
+        continue;
+      }
       if (!isW(q, r) || walk[r * cols + q] === 3 || nearWell(q, r)) continue;
       const x = (q + 0.5) * CELL * M, z = (r + 0.5) * CELL * M;
       if (q % 4 === 2 && r % 4 === 2 && open(q, r, 1)) add("light", m4().makeScale(0.6, 0.02, 1.2).setPosition(x, WALL_H - 0.02, z), null);
@@ -428,7 +630,10 @@
       light: new THREE.MeshBasicMaterial({ color: 0xffffff }),
       seat: new THREE.MeshLambertMaterial({ color: 0x3f7f9a }),
       pot: new THREE.MeshLambertMaterial({ color: 0xf2efe8 }),
-      leaf: new THREE.MeshLambertMaterial({ color: 0x5d9b5a, flatShading: true })
+      leaf: new THREE.MeshLambertMaterial({ color: 0x5d9b5a, flatShading: true }),
+      shopglass: new THREE.MeshBasicMaterial({ color: 0xdff0f7, transparent: true, opacity: 0.18, depthWrite: false }),
+      shopfloor: new THREE.MeshBasicMaterial({ color: 0xf7f7f5 }),
+      shelf: new THREE.MeshBasicMaterial({ map: shelfTexture() })
     };
     const group = new THREE.Group();
     const color = new THREE.Color();
@@ -442,6 +647,7 @@
       if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
       group.add(mesh);
     }
+    extra.forEach((o) => group.add(o));
     return group;
   }
 
@@ -555,6 +761,21 @@
           nr.pts.unshift([p.x, p.y], ...aroundWell(e, [p.x, p.y], nr.pts[0], side)); nr.startHeading = p.heading;
         }
       }
+      // 行き先が店のときは、店の中まで入らずに入口の前で店の方を向いて止まる
+      const shop = (info.shops || []).find((sh) => i === runs.length - 1 && opts.to && sh.id === opts.to.id);
+      const door = shop && shopDoor(info, shop);
+      if (door) {
+        const ok = ([x, y]) => { const v = info.walk[Math.floor(y / CELL) * info.cols + Math.floor(x / CELL)]; return v === 1 || v === 2; };
+        // 経路を後ろから見て、廊下にいる最後の点まで戻る（エスカレーター区画や店の中は通らない）
+        let k = nr.pts.length - 1;
+        while (k > 0 && !ok(nr.pts[k])) k--;
+        const keep = nr.pts.slice(0, k + 1);
+        const via = corridorPath(info, keep[keep.length - 1], [door.x, door.y]);
+        if (via) {
+          nr.pts = [...keep, ...via, [door.x, door.y]];
+          nr.endHeading = door.heading;
+        }
+      }
       out.push(nr);
     }
     return out;
@@ -624,7 +845,7 @@
     for (const p of opts.places) {
       const ph = photosOf(p);
       if (!ph || p.f !== v.f || !shown(p)) continue;
-      if (Math.hypot(p.at[0] - v.x, p.at[1] - v.y) * M < 9) { near = { p, ph }; break; }
+      if (Math.hypot(p.at[0] - v.x, p.at[1] - v.y) * M < 5) { near = { p, ph }; break; }
     }
     if (near) {
       const img = card.querySelector("img");
