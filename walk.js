@@ -43,7 +43,9 @@
     fillHoles(walk, cols, rows);
     const esc = findEscalator(f, px, cols, rows, walk);
     const shops = findShops(f, px, cols, rows, walk, fl.w, fl.h);
-    floorCache[f] = { fl, img, px, cols, rows, walk, esc, shops };
+    // 受付カウンター（区画全体をカウンターにする）
+    const counters = findShops(f, px, cols, rows, walk, fl.w, fl.h, COUNTER_IDS, 5);
+    floorCache[f] = { fl, img, px, cols, rows, walk, esc, shops, counters };
     return floorCache[f];
   }
 
@@ -67,24 +69,6 @@
       if (comp.length <= 40 && !touchesEdge) for (const c of comp) walk[c] = 1;
     }
   }
-
-  // 経路の通り道は（部屋の中や待合も）歩けるようにくり抜く
-  function carve(info, pts) {
-    const { cols, rows, walk } = info;
-    const rad = 2;
-    for (let i = 0; i < pts.length - 1; i++) {
-      const [x1, y1] = pts[i], [x2, y2] = pts[i + 1];
-      const n = Math.max(1, Math.ceil(Math.hypot(x2 - x1, y2 - y1) / (CELL / 2)));
-      for (let k = 0; k <= n; k++) {
-        const x = x1 + (x2 - x1) * k / n, y = y1 + (y2 - y1) * k / n;
-        const q0 = Math.floor(x / CELL), r0 = Math.floor(y / CELL);
-        for (let r = r0 - rad; r <= r0 + rad; r++) for (let q = q0 - rad; q <= q0 + rad; q++) {
-          if (r >= 0 && q >= 0 && r < rows && q < cols && walk[r * cols + q] < 3) walk[r * cols + q] = 2;
-        }
-      }
-    }
-  }
-
 
   /* ---------- エスカレーター ---------- */
   const FLOOR_H = 4.0; // 階高（m）
@@ -148,19 +132,6 @@
     }[kind];
     const p = e.P(pick[0], pick[1], 0);
     return { x: p.x / M, y: p.z / M, heading: e.yaw(pick[2]) };
-  }
-
-  // 区画を横切る場合は、区画の脇を回り込む点を足す（画像px の点列を返す）
-  function aroundWell(e, from, to, side) {
-    const [sa, ta] = e.local(from[0] * M, from[1] * M), [sb, tb] = e.local(to[0] * M, to[1] * M);
-    let hit = false;
-    for (let k = 1; k < 20; k++) {
-      const s = sa + (sb - sa) * k / 20, t = ta + (tb - ta) * k / 20;
-      if (s > -0.2 && s < e.L + 0.2 && Math.abs(t) < e.W / 2 + 0.2) hit = true;
-    }
-    if (!hit) return [];
-    const tSide = e.openSide * (e.W / 2 + 1.1), cl = (v) => Math.max(-1.4, Math.min(e.L + 1.4, v));
-    return [e.P(cl(sa), tSide, 0), e.P(cl(sb), tSide, 0)].map((v) => [v.x / M, v.z / M]);
   }
 
   function buildEscalator(e) {
@@ -277,16 +248,16 @@
     return mesh;
   }
 
-
   /* ---------- 売店（ガラス張りの店構え） ---------- */
   const SHOP_IDS = ["seven", "greenleaves"];
+  const COUNTER_IDS = ["reception"];
   // 店の区画をフロアマップの部屋の色から探し、walk=4 として印を付ける
-  function findShops(f, px, cols, rows, walk, W, H) {
+  function findShops(f, px, cols, rows, walk, W, H, ids = SHOP_IDS, mark = 4) {
     const out = [];
     const lumOf = (p) => (p[0] + p[1] + p[2]) / 3;
     const isBeige = (p) => Math.abs(p[0] - BEIGE[0]) < 6 && Math.abs(p[1] - BEIGE[1]) < 6 && Math.abs(p[2] - BEIGE[2]) < 7;
     for (const p of opts.places) {
-      if (p.f !== f || !SHOP_IDS.includes(p.id)) continue;
+      if (p.f !== f || !ids.includes(p.id)) continue;
       // 種：行き先の点の近くで部屋の色をしている画素
       let seed = null;
       for (let d = 0; d <= 40 && !seed; d += 2) for (let dy = -d; dy <= d && !seed; dy += 2) for (let dx = -d; dx <= d && !seed; dx += 2) {
@@ -330,7 +301,7 @@
         if (nb.some((j) => cells.has(j)) && nb.some((j) => walk[j] === 1 || walk[j] === 2)) add.push(k);
       }
       add.forEach((k) => cells.add(k));
-      for (const c of cells) walk[c] = 4;
+      for (const c of cells) walk[c] = mark;
       const m = p.name.match(/（(.+?)）/);
       out.push({ id: p.id, place: p, label: m ? m[1] : (p.short || p.name), cells });
     }
@@ -370,29 +341,6 @@
     const [x, y, horiz, len, nx, nz] = best;
     const mx = horiz ? x + len / 2 : x, my = horiz ? y : y + len / 2;
     return { x: mx + nx * 3.4 / M, y: my + nz * 3.4 / M, heading: Math.atan2(-nx, -nz) };
-  }
-  // 廊下のマスだけを通る最短の道（画像px の点列）
-  function corridorPath(info, from, to) {
-    const { cols, rows, walk } = info;
-    const ok = (k) => walk[k] === 1 || walk[k] === 2;
-    const cell = ([x, y]) => Math.floor(y / CELL) * cols + Math.floor(x / CELL);
-    const s0 = cell(from), t0 = cell(to);
-    const prev = new Int32Array(cols * rows).fill(-1), q = [s0];
-    prev[s0] = s0;
-    for (let h = 0; h < q.length; h++) {
-      const k = q[h];
-      if (k === t0) break;
-      const x = k % cols;
-      for (const j of [k + 1, k - 1, k + cols, k - cols]) {
-        if (j < 0 || j >= cols * rows || prev[j] >= 0 || Math.abs((j % cols) - x) > 1 || (!ok(j) && j !== t0)) continue;
-        prev[j] = k; q.push(j);
-      }
-    }
-    if (prev[t0] < 0) return null;
-    const path = [];
-    for (let k = t0; k !== s0; k = prev[k]) path.push(k);
-    path.reverse();
-    return path.filter((_, i) => i % 3 === 2).map((k) => [((k % cols) + 0.5) * CELL, (((k / cols) | 0) + 0.5) * CELL]);
   }
 
   // 商品棚の絵（キャンバス）
@@ -493,7 +441,7 @@
       let start = -1, si = null;
       for (let q = 0; q <= cols; q++) {
         const edge = q < cols && isW(q, r) && !isW(q, r + side);
-        if (edge && start < 0) { start = q; si = { ...sideInfo(q, r + side), inShop: cellOf(q, r) === 4 }; }
+        if (edge && start < 0) { start = q; si = { ...sideInfo(q, r + side), inShop: cellOf(q, r) === 4, plain: cellOf(q, r) === 5 }; }
         if (!edge && start >= 0) { push(start * CELL, (side < 0 ? r : r + 1) * CELL, true, (q - start) * CELL, 0, -side, si); start = -1; }
       }
     }
@@ -501,7 +449,7 @@
       let start = -1, si = null;
       for (let r = 0; r <= rows; r++) {
         const edge = r < rows && isW(q, r) && !isW(q + side, r);
-        if (edge && start < 0) { start = r; si = { ...sideInfo(q + side, r), inShop: cellOf(q, r) === 4 }; }
+        if (edge && start < 0) { start = r; si = { ...sideInfo(q + side, r), inShop: cellOf(q, r) === 4, plain: cellOf(q, r) === 5 }; }
         if (!edge && start >= 0) { push((side < 0 ? q : q + 1) * CELL, start * CELL, false, (r - start) * CELL, -side, 0, si); start = -1; }
       }
     }
@@ -583,8 +531,28 @@
     // 天井の照明・植栽・待合いす（廊下の広い所に）
     const open = (q, r, k) => { for (let dr = -k; dr <= k; dr++) for (let dq = -k; dq <= k; dq++) if (!isW(q + dq, r + dr)) return false; return true; };
     const nearWell = (q, r) => { for (let dr = -3; dr <= 3; dr++) for (let dq = -3; dq <= 3; dq++) if (walk[(r + dr) * cols + q + dq] === 3) return true; return false; };
+    const nearShop = (q, r) => { for (let dr = -6; dr <= 6; dr++) for (let dq = -6; dq <= 6; dq++) { const v = walk[(r + dr) * cols + q + dq]; if (v === 4 || v === 5) return true; } return false; };
     const nearRoute = (q, r, k) => { for (let dr = -k; dr <= k; dr++) for (let dq = -k; dq <= k; dq++) if (walk[(r + dr) * cols + q + dq] === 2) return true; return false; };
     for (let r = 2; r < rows - 2; r++) for (let q = 2; q < cols - 2; q++) {
+      if (walk[r * cols + q] === 5) {
+        // 受付カウンター：廊下に面したマスはカウンター、奥は事務スペース
+        const x = (q + 0.5) * CELL * M, z = (r + 0.5) * CELL * M, c = CELL * M;
+        const nb = [[1, 0], [-1, 0], [0, 1], [0, -1]].filter(([dq, dr]) => { const v = cellOf(q + dq, r + dr); return v === 1 || v === 2; });
+        add("shopfloor", m4().makeScale(c, 0.01, c).setPosition(x, 0.006, z), null);
+        if (nb.length) {
+          add("door", m4().makeScale(c + 0.01, 1.0, c + 0.01).setPosition(x, 0.5, z), WOOD);
+          add("frame", m4().makeScale(c + 0.08, 0.05, c + 0.08).setPosition(x, 1.025, z), [0.97, 0.97, 0.95]);
+          for (const [dq, dr] of nb) {
+            add("frame", m4().makeScale(dq ? 0.02 : c, 0.06, dq ? c : 0.02).setPosition(x + dq * (c / 2 + 0.01), 0.1, z + dr * (c / 2 + 0.01)), [0.55, 0.5, 0.45]);
+          }
+          if ((q + r) % 4 === 0) add("frame", m4().makeScale(0.35, 0.25, 0.04).setPosition(x - (nb[0][0] || 0) * 0.15, 1.2, z - (nb[0][1] || 0) * 0.15), [0.2, 0.22, 0.25]); // 受付の端末
+        } else {
+          if ((q + r) % 2 === 0) add("frame", m4().makeScale(c * 0.9, 0.72, c * 0.5).setPosition(x, 0.36, z), [0.9, 0.9, 0.88]); // 事務机
+          if ((q * 7 + r) % 3 === 0) add("seat", m4().makeScale(0.45, 0.45, 0.45).setPosition(x, 0.45, z), null);
+        }
+        if (q % 3 === 1 && r % 2 === 1) add("light", m4().makeScale(0.5, 0.02, 1.4).setPosition(x, WALL_H - 0.02, z), null);
+        continue;
+      }
       if (walk[r * cols + q] === 4) {
         // 店内：白い床、照明、商品棚（列ごと）
         const x = (q + 0.5) * CELL * M, z = (r + 0.5) * CELL * M;
@@ -595,6 +563,7 @@
         continue;
       }
       if (!isW(q, r) || walk[r * cols + q] === 3 || nearWell(q, r)) continue;
+      if (nearShop(q, r)) { if (q % 4 === 2 && r % 4 === 2 && open(q, r, 1)) add("light", m4().makeScale(0.6, 0.02, 1.2).setPosition((q + 0.5) * CELL * M, WALL_H - 0.02, (r + 0.5) * CELL * M), null); continue; }
       const x = (q + 0.5) * CELL * M, z = (r + 0.5) * CELL * M;
       if (q % 4 === 2 && r % 4 === 2 && open(q, r, 1)) add("light", m4().makeScale(0.6, 0.02, 1.2).setPosition(x, WALL_H - 0.02, z), null);
       if (nearRoute(q, r, 2)) continue;
@@ -680,9 +649,19 @@
   async function buildFloor(f) {
     const info = await analyzeFloor(f);
     const { fl } = info;
-    const routePts = opts.runs.filter((r) => r.f === f).flatMap((r) => r.pts);
+    // 地図上で廊下が途切れていて通り抜けが必要だったマスだけ開ける（壁は残す）
     const saved = info.walk.slice();
-    carve(info, routePts);
+    for (const k of info.opened || []) if (info.walk[k] === 0) info.walk[k] = 2;
+    // 経路の通るマスに印（2）を付け、いすや植木を置かないようにする
+    for (const r of opts.runs.filter((r) => r.f === f)) {
+      for (let i = 0; i < r.pts.length - 1; i++) {
+        const [x1, y1] = r.pts[i], [x2, y2] = r.pts[i + 1], n = Math.ceil(Math.hypot(x2 - x1, y2 - y1) / CELL) + 1;
+        for (let k = 0; k <= n; k++) {
+          const c = Math.floor((y1 + (y2 - y1) * k / n) / CELL) * info.cols + Math.floor((x1 + (x2 - x1) * k / n) / CELL);
+          if (info.walk[c] === 1) info.walk[c] = 2;
+        }
+      }
+    }
     const group = new THREE.Group();
 
     // 床：木目調のシート、天井：照明つきの天井材（エスカレーターの所は吹き抜け）
@@ -739,44 +718,179 @@
     return group;
   }
 
+  /* ---------- 廊下だけを通る道順 ---------- */
+  // 壁からの距離（マス）。歩けないマスは 0
+  function wallDist(info) {
+    if (info.dist) return info.dist;
+    const { cols, rows, walk } = info, n = cols * rows;
+    const d = new Int16Array(n).fill(-1), q = [];
+    for (let k = 0; k < n; k++) if (walk[k] !== 1 && walk[k] !== 2) { d[k] = 0; q.push(k); }
+    for (let h = 0; h < q.length; h++) {
+      const k = q[h], x = k % cols;
+      for (const j of [k + 1, k - 1, k + cols, k - cols]) {
+        if (j < 0 || j >= n || d[j] >= 0 || Math.abs((j % cols) - x) > 1) continue;
+        d[j] = d[k] + 1; q.push(j);
+      }
+    }
+    for (let k = 0; k < n; k++) if (d[k] < 0) d[k] = 99;
+    return (info.dist = d);
+  }
+  // 点の近くの歩けるマス（画像px）
+  function snap(info, [x, y]) {
+    const { cols, rows, walk } = info, d = wallDist(info);
+    const q0 = Math.floor(x / CELL), r0 = Math.floor(y / CELL);
+    let best = null;
+    for (let rad = 0; rad <= 30 && !best; rad++) for (let dr = -rad; dr <= rad; dr++) for (let dq = -rad; dq <= rad; dq++) {
+      if (Math.max(Math.abs(dr), Math.abs(dq)) !== rad) continue;
+      const q = q0 + dq, r = r0 + dr;
+      if (q < 0 || r < 0 || q >= cols || r >= rows) continue;
+      const k = r * cols + q;
+      if ((walk[k] === 1 || walk[k] === 2) && (!best || d[k] > best.d || (d[k] === best.d && Math.hypot(dq, dr) < best.h))) best = { k, d: d[k], h: Math.hypot(dq, dr) };
+    }
+    return best ? best.k : r0 * cols + q0;
+  }
+  // 2マス間の最短路（壁際を避ける）。廊下が途切れている所だけ、部屋を通り抜けるのを高い費用で許す
+  function cellPath(info, s0, t0) {
+    const { cols, rows, walk } = info, n = cols * rows, d = wallDist(info);
+    const cost = (k) => {
+      const v = walk[k];
+      if (v >= 3) return Infinity;                          // エスカレーター区画・店の中・カウンターは通らない
+      if (v === 0) return 60;                               // 壁・部屋（どうしても必要なときだけ）
+      return 1 + (d[k] <= 1 ? 6 : d[k] === 2 ? 2 : 0);    // 壁際は避ける
+    };
+    const dist = new Float64Array(n).fill(Infinity), prev = new Int32Array(n).fill(-1);
+    const heap = [[0, s0]];
+    dist[s0] = 0;
+    const push = (item) => { heap.push(item); let i = heap.length - 1; while (i > 0) { const p = (i - 1) >> 1; if (heap[p][0] <= heap[i][0]) break; [heap[p], heap[i]] = [heap[i], heap[p]]; i = p; } };
+    const pop = () => { const top = heap[0], last = heap.pop(); if (heap.length) { heap[0] = last; let i = 0; for (;;) { const l = 2 * i + 1, r = l + 1; let m = i; if (l < heap.length && heap[l][0] < heap[m][0]) m = l; if (r < heap.length && heap[r][0] < heap[m][0]) m = r; if (m === i) break; [heap[m], heap[i]] = [heap[i], heap[m]]; i = m; } } return top; };
+    while (heap.length) {
+      const [c, k] = pop();
+      if (c > dist[k]) continue;
+      if (k === t0) break;
+      const x = k % cols, y = (k / cols) | 0;
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]]) {
+        const nx = x + dx, ny = y + dy;
+        if (nx < 0 || ny < 0 || nx >= cols || ny >= rows) continue;
+        const j = ny * cols + nx;
+        if (dx && dy && (cost(y * cols + nx) > 50 || cost(ny * cols + x) > 50)) continue; // 角をすり抜けない
+        const w = cost(j) * (dx && dy ? 1.414 : 1);
+        if (c + w < dist[j]) { dist[j] = c + w; prev[j] = k; push([c + w, j]); }
+      }
+    }
+    if (prev[t0] < 0 && s0 !== t0) return [s0, t0];
+    const path = [];
+    for (let k = t0; k !== s0 && k >= 0; k = prev[k]) path.push(k);
+    path.push(s0);
+    return path.reverse();
+  }
+  // マスの列を、見通しの利く所はまっすぐな線にまとめる
+  function smooth(info, cells) {
+    const { cols, walk } = info, d = wallDist(info);
+    const ctr = (k) => [((k % cols) + 0.5) * CELL, (((k / cols) | 0) + 0.5) * CELL];
+    const clear = (i, j) => {
+      let need = 9;
+      for (let k = i; k <= j; k++) need = Math.min(need, d[cells[k]]);
+      need = Math.min(need, 2);
+      const [x1, y1] = ctr(cells[i]), [x2, y2] = ctr(cells[j]);
+      const steps = Math.ceil(Math.hypot(x2 - x1, y2 - y1) / (CELL / 3));
+      for (let s = 0; s <= steps; s++) {
+        const x = x1 + (x2 - x1) * s / steps, y = y1 + (y2 - y1) * s / steps;
+        const k = Math.floor(y / CELL) * cols + Math.floor(x / CELL);
+        if (walk[k] === 0 && !(info.opened && info.opened.has(k))) return false;
+        if (walk[k] >= 3) return false;
+        if (d[k] < need) return false;
+      }
+      return true;
+    };
+    const out = [ctr(cells[0])];
+    let i = 0;
+    while (i < cells.length - 1) {
+      let j = cells.length - 1;
+      while (j > i + 1 && !clear(i, j)) j--;
+      out.push(ctr(cells[j]));
+      i = j;
+    }
+    return out;
+  }
+  // 経路の点列を、廊下だけを通る点列に引き直す（画像px）
+  function gridRoute(info, pts) {
+    info.opened = info.opened || new Set();
+    const keys = pts.map((p) => snap(info, p));
+    let cells = [keys[0]];
+    for (let i = 1; i < keys.length; i++) {
+      const seg = cellPath(info, keys[i - 1], keys[i]);
+      cells = cells.concat(seg.slice(1));
+    }
+    for (const k of cells) if (info.walk[k] === 0) info.opened.add(k);
+    if (cells.length === 1) return [[((keys[0] % info.cols) + 0.5) * CELL, (((keys[0] / info.cols) | 0) + 0.5) * CELL]];
+    return smooth(info, cells);
+  }
+
+
+  // カウンターの正面（廊下側）から少し離れた立ち位置（画像px）と、カウンターを向く向き
+  function counterStand(info, cn) {
+    const { cols, walk } = info;
+    let sx = 0, sy = 0, nx = 0, ny = 0, n = 0;
+    for (const k of cn.cells) {
+      const q = k % cols, r = (k / cols) | 0;
+      for (const [dq, dr] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const v = walk[(r + dr) * cols + q + dq];
+        if (v === 1 || v === 2) { sx += (q + 0.5) * CELL; sy += (r + 0.5) * CELL; nx += dq; ny += dr; n++; }
+      }
+    }
+    if (!n) return null;
+    const len = Math.hypot(nx, ny) || 1;
+    nx /= len; ny /= len;
+    // 行き先の点に近い所の正面に立つ
+    const [gx, gy] = cn.place.at;
+    let best = null;
+    for (const k of cn.cells) {
+      const q = k % cols, r = (k / cols) | 0, x = (q + 0.5) * CELL, y = (r + 0.5) * CELL;
+      const v = walk[(r + Math.round(ny)) * cols + q + Math.round(nx)];
+      if (v !== 1 && v !== 2) continue;
+      const d = Math.hypot(x - gx, y - gy);
+      if (!best || d < best.d) best = { d, x, y };
+    }
+    if (!best) return null;
+    return { x: best.x + nx * 2.4 / M, y: best.y + ny * 2.4 / M, heading: Math.atan2(-nx, -ny) };
+  }
+
   /* ---------- 視点の列 ---------- */
   // エスカレーターに乗り降りする所は、区画の中ではなく乗り口・降り口に立つようにする
   async function prepareRuns(runs) {
     const out = [];
     for (let i = 0; i < runs.length; i++) {
       const r = runs[i], info = await analyzeFloor(r.f), e = info.esc;
-      const nr = { ...r, pts: r.pts.slice() };
+      let pts = r.pts.slice(), endHeading = null, startHeading = null;
+      // エスカレーターに乗り降りする所は、区画の中ではなく乗り口・降り口に立つ
       if (e) {
         const inWell = ([x, y]) => x * M >= e.x0 - 0.2 && x * M <= e.x1 + 0.2 && y * M >= e.z0 - 0.2 && y * M <= e.z1 + 0.2;
+        pts = pts.filter((p, k) => !inWell(p) || pts.length === 1);
         if (r.exit && r.exit.lift === "esc") {
           const p = escPose(e, r.exit.to > r.f ? "goUp" : "goDown");
-          while (nr.pts.length > 1 && inWell(nr.pts[nr.pts.length - 1])) nr.pts.pop();
-          const side = r.exit.to > r.f ? -1 : 1;
-          nr.pts.push(...aroundWell(e, nr.pts[nr.pts.length - 1], [p.x, p.y], side), [p.x, p.y]); nr.endHeading = p.heading;
+          pts.push([p.x, p.y]); endHeading = p.heading;
         }
         if (r.enter && r.enter.lift === "esc" && runs[i - 1]) {
           const p = escPose(e, runs[i - 1].f < r.f ? "fromBelow" : "fromAbove");
-          while (nr.pts.length > 1 && inWell(nr.pts[0])) nr.pts.shift();
-          const side = runs[i - 1].f < r.f ? 1 : -1;
-          nr.pts.unshift([p.x, p.y], ...aroundWell(e, [p.x, p.y], nr.pts[0], side)); nr.startHeading = p.heading;
+          pts.unshift([p.x, p.y]); startHeading = p.heading;
         }
+        if (!pts.length) pts = r.pts.slice(0, 1);
       }
       // 行き先が店のときは、店の中まで入らずに入口の前で店の方を向いて止まる
       const shop = (info.shops || []).find((sh) => i === runs.length - 1 && opts.to && sh.id === opts.to.id);
       const door = shop && shopDoor(info, shop);
-      if (door) {
-        const ok = ([x, y]) => { const v = info.walk[Math.floor(y / CELL) * info.cols + Math.floor(x / CELL)]; return v === 1 || v === 2; };
-        // 経路を後ろから見て、廊下にいる最後の点まで戻る（エスカレーター区画や店の中は通らない）
-        let k = nr.pts.length - 1;
-        while (k > 0 && !ok(nr.pts[k])) k--;
-        const keep = nr.pts.slice(0, k + 1);
-        const via = corridorPath(info, keep[keep.length - 1], [door.x, door.y]);
-        if (via) {
-          nr.pts = [...keep, ...via, [door.x, door.y]];
-          nr.endHeading = door.heading;
-        }
+      const goal = pts[pts.length - 1];
+      if (door) { pts[pts.length - 1] = [door.x, door.y]; endHeading = door.heading; }
+      const counter = (info.counters || []).find((cn) => i === runs.length - 1 && opts.to && cn.id === opts.to.id);
+      const stand = counter && counterStand(info, counter);
+      if (stand) { pts[pts.length - 1] = [stand.x, stand.y]; endHeading = stand.heading; }
+      const routed = gridRoute(info, pts);
+      // 行き先が部屋の中なら、廊下の手前で部屋の方を向いて止まる
+      if (endHeading == null && i === runs.length - 1) {
+        const last = routed[routed.length - 1];
+        if (Math.hypot(goal[0] - last[0], goal[1] - last[1]) * M > 0.8) endHeading = Math.atan2(goal[0] - last[0], goal[1] - last[1]);
       }
-      out.push(nr);
+      out.push({ ...r, pts: routed, endHeading, startHeading });
     }
     return out;
   }
