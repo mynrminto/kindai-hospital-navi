@@ -80,21 +80,35 @@
   <section class="block result" id="result" hidden aria-labelledby="h-result">
     <h2 class="type-h3" id="h-result">ルート案内</h2>
     <div class="summary" id="summary"></div>
-    <div class="tabs" id="tabs" role="tablist" aria-label="表示する階"></div>
-    <div class="mapwrap">
-      <div class="maphead">
-        <span class="floorname" id="floorname"></span>
-        <button type="button" class="ghost" id="zoom">フロア全体を見る</button>
+    <div class="routebody">
+      <div class="mapcol">
+        <div class="viewswitch" role="group" aria-label="地図の表示">
+          <button type="button" id="v2d" class="on" aria-pressed="true">平面マップ</button>
+          <button type="button" id="v3d" aria-pressed="false">3Dマップ</button>
+        </div>
+        <div class="tabs" id="tabs" role="tablist" aria-label="表示する階"></div>
+        <div class="mapwrap" id="map2d">
+          <div class="maphead">
+            <span class="floorname" id="floorname"></span>
+            <button type="button" class="ghost" id="zoom">フロア全体を見る</button>
+          </div>
+          <svg id="map" viewBox="0 0 1758 1060" role="img" aria-label="フロアマップ上の経路"></svg>
+          <div class="mapnav">
+            <button type="button" id="prev" aria-label="前の階">‹ 前の階</button>
+            <button type="button" id="next" aria-label="次の階">次の階 ›</button>
+          </div>
+        </div>
+        <div class="map3dwrap" id="map3dwrap" hidden>
+          <div class="map3d" id="map3d" role="img" aria-label="各階を積み重ねた3Dマップと経路"></div>
+          <p class="map3d-hint">ドラッグで回転、ピンチ・ホイールで拡大縮小。赤い線が経路、緑が出発、赤が到着です。</p>
+        </div>
       </div>
-      <svg id="map" viewBox="0 0 1758 1060" role="img" aria-label="フロアマップ上の経路"></svg>
-      <div class="mapnav">
-        <button type="button" id="prev" aria-label="前の階">‹ 前の階</button>
-        <button type="button" id="next" aria-label="次の階">次の階 ›</button>
+      <div class="stepcol">
+        <ol class="steps" id="steps"></ol>
+        <div class="actions">
+          <button type="button" class="btn-outline" id="share">この経路のリンクをコピー</button>
+        </div>
       </div>
-    </div>
-    <ol class="steps" id="steps"></ol>
-    <div class="actions">
-      <button type="button" class="btn-outline" id="share">この経路のリンクをコピー</button>
     </div>
   </section>
 

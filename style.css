@@ -245,11 +245,19 @@ select:focus-visible, button:focus-visible, a:focus-visible, input:focus-visible
   .page-ttl h1 { font-size: 32px; }
 }
 
+.viewswitch { display: inline-flex; border: 1px solid var(--navy); border-radius: 4px; overflow: hidden; margin-bottom: 10px; }
+.viewswitch button { font-size: 14px; font-weight: 700; padding: 7px 16px; border: none; background: #fff; color: var(--navy); cursor: pointer; }
+.viewswitch button.on { background: var(--navy); color: #fff; }
+.map3dwrap { border: 1px solid var(--line); border-radius: 4px; overflow: hidden; background: linear-gradient(180deg, #f2f6f9 0%, #ffffff 70%); }
+.map3d { width: 100%; aspect-ratio: 4 / 3; touch-action: none; cursor: grab; position: relative; }
+.map3d canvas { display: block; }
+.map3d-hint { margin: 0; padding: 8px 10px; font-size: 12px; color: var(--muted); border-top: 1px solid var(--line); background: #fff; }
+.map3d .loading { position: absolute; inset: 0; display: grid; place-items: center; color: var(--navy); font-size: 14px; }
+
 @media (min-width: 960px) {
-  .result { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); column-gap: 28px; align-items: start; }
-  .result > .type-h3, .result > .summary, .result > .tabs { grid-column: 1 / -1; }
-  .result > .mapwrap { grid-column: 1; grid-row: 4 / span 2; position: sticky; top: 76px; }
-  .result > .steps { grid-column: 2; margin-top: 0; }
-  .result > .actions { grid-column: 2; grid-row: 5; align-self: start; justify-content: flex-start; }
-  .result > .steps { grid-row: 4; }
+  .routebody { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); column-gap: 28px; align-items: start; }
+  .mapcol { position: sticky; top: 76px; }
+  .stepcol .steps { margin-top: 0; }
+  .stepcol .actions { justify-content: flex-start; }
 }
+

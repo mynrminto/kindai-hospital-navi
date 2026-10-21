@@ -203,7 +203,43 @@
     chips.appendChild(b);
   }
 
-  let state = { floors: [], runs: [], src: null, dst: null, zoom: true, cur: 0 };
+  let state = { floors: [], runs: [], src: null, dst: null, zoom: true, cur: 0, view: "2d" };
+
+  /* ---------- 3D表示（必要になったときに three.js を読み込む） ---------- */
+  let lib3d = null;
+  const loadScript = (src) => new Promise((ok, ng) => {
+    const s = document.createElement("script");
+    s.src = src; s.onload = ok; s.onerror = ng;
+    document.head.appendChild(s);
+  });
+  function load3d() {
+    if (!lib3d) {
+      lib3d = loadScript("vendor/three.min.js")
+        .then(() => loadScript("vendor/OrbitControls.js"))
+        .then(() => loadScript("view3d.js"));
+    }
+    return lib3d;
+  }
+  function draw3d() {
+    const el = $("map3d");
+    if (!window.View3D) el.innerHTML = '<div class="loading">3Dマップを読み込み中…</div>';
+    load3d().then(() => {
+      el.innerHTML = "";
+      window.View3D.render(el, {
+        H, runs: state.runs, floors: state.floors,
+        from: placeById[state.src], to: placeById[state.dst]
+      });
+    }).catch(() => { el.innerHTML = '<div class="loading">3Dマップを表示できませんでした。</div>'; });
+  }
+  function setView(v) {
+    state.view = v;
+    const is3d = v === "3d";
+    $("v2d").classList.toggle("on", !is3d); $("v2d").setAttribute("aria-pressed", String(!is3d));
+    $("v3d").classList.toggle("on", is3d); $("v3d").setAttribute("aria-pressed", String(is3d));
+    $("map2d").hidden = is3d; $("tabs").hidden = is3d; $("map3dwrap").hidden = !is3d;
+    if (is3d) draw3d();
+    else if (window.View3D) window.View3D.dispose();
+  }
 
   function update(pushUrl = true) {
     const a = fromSel.value, b = toSel.value;
@@ -272,6 +308,7 @@
     }
     renderTabs();
     selectFloor(0);
+    if (state.view === "3d") draw3d();
   }
 
   function renderTabs() {
@@ -380,6 +417,9 @@
   $("swap").addEventListener("click", () => {
     const a = fromSel.value; fromSel.value = toSel.value; toSel.value = a; update();
   });
+  $("v2d").addEventListener("click", () => setView("2d"));
+  $("v3d").addEventListener("click", () => setView("3d"));
+  window.addEventListener("resize", () => { if (state.view === "3d" && window.View3D) window.View3D.resize($("map3d")); });
   $("zoom").addEventListener("click", () => { state.zoom = !state.zoom; drawFloor(state.floors[state.cur]); });
   $("prev").addEventListener("click", () => selectFloor(Math.max(0, state.cur - 1)));
   $("next").addEventListener("click", () => selectFloor(Math.min(state.floors.length - 1, state.cur + 1)));

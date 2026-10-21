@@ -11,7 +11,7 @@ window.HOSPITAL = {
   floors: {
     1: { img: "maps/floor01.png", w: 1758, h: 1200 },
     2: { img: "maps/floor02.png", w: 1994, h: 1200 },
-    3: { img: "maps/floor03.png", w: 1758, h: 892 },
+    3: { img: "maps/floor03.png", w: 1758, h: 892, offset: [0, 153] }, // 3階の画像は他の階より上に約153pxずれている
     4: { img: "maps/floor04.png", w: 1758, h: 1060 },
     5: { img: "maps/floor05.png", w: 1758, h: 1060 },
     6: { img: "maps/floor06.png", w: 1758, h: 1060 },
