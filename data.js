@@ -33,7 +33,7 @@ window.HOSPITAL = {
       G: [900, 465], H: [958, 468], H2: [980, 468], I: [1140, 468], ev2w: [1142, 600],
       J: [1500, 468], ev2e: [1499, 600], K: [1540, 468], L: [1545, 730],
       D: [600, 690], ev1c: [569, 677], esc: [630, 622], E: [600, 740], M: [940, 735], N: [1236, 730],
-      R1: [1700, 745], R2: [1790, 810], W: [215, 675], inner: [430, 720], iL: [300, 720]
+      R1: [1700, 745], R2: [1790, 810], S: [600, 990], W: [215, 675], inner: [430, 720], iL: [300, 720]
     },
     3: {
       ev1w: [178, 272], a: [215, 285], T: [400, 285], c: [630, 300],
@@ -70,7 +70,7 @@ window.HOSPITAL = {
   // 通路（"a-b-c" は a→b→c とつながる廊下）
   paths: {
     1: ["ev1w-a1-a2", "ev1c-b1"],
-    2: ["ev1w-A-B-C-F-G-H-H2-I-J-K-L", "C-D-E-M-N-L", "D-ev1c", "D-esc", "I-ev2w", "J-ev2e",
+    2: ["ev1w-A-B-C-F-G-H-H2-I-J-K-L", "C-D-E-M-N-L", "E-S", "D-ev1c", "D-esc", "I-ev2w", "J-ev2e",
         "L-R1-R2", "A-W", "D-inner-iL", "B-B6", "F-F6"],
     3: ["ev1w-a-T-c-top2-tL-wcol-tR", "c-d-e-f1-f2-f3-f4-f5-f6-f7-f8", "d-ev1c", "d-esc",
         "a-L0-L1-L2-entL-B3-Bt-e", "L1-inner-d", "wcol-wcol2-f4", "wcol2-ev2w", "tR-eR-f7", "eR-ev2e",
@@ -214,11 +214,13 @@ window.HOSPITAL = {
     // 7〜10階：院内図面より（中央エレベーターホール脇）
     { kind: "toilet", f: 7, at: [1242, 520] }, { kind: "toilet", f: 8, at: [1242, 520] },
     { kind: "toilet", f: 9, at: [1242, 520] }, { kind: "toilet", f: 10, at: [1242, 520] },
-    { kind: "pay", f: 1, at: [613, 437] }, { kind: "pay", f: 2, at: [592, 987] }, { kind: "pay", f: 3, at: [590, 272] },
-    { kind: "pay", f: 4, at: [583, 433] }, { kind: "pay", f: 5, at: [598, 985] }, { kind: "pay", f: 6, at: [608, 410] },
-    { kind: "atm", f: 2, at: [928, 858] }, { kind: "atm", f: 3, at: [1240, 855] }
+    // 自動支払機（3階・駐車場側出入口の近く）
+    { kind: "pay", f: 3, at: [1240, 855] },
+    // 自動販売機（公式マップのオレンジのアイコン）
+    { kind: "vending", f: 1, at: [613, 437] }, { kind: "vending", f: 2, at: [592, 987] }, { kind: "vending", f: 3, at: [590, 272] },
+    { kind: "vending", f: 4, at: [583, 433] }, { kind: "vending", f: 5, at: [598, 985] }, { kind: "vending", f: 6, at: [608, 410] }
   ],
-  amenityNames: { toilet: "トイレ", pay: "自動支払機", atm: "ATM" },
+  amenityNames: { toilet: "トイレ", pay: "自動支払機", vending: "自動販売機" },
 
   // 目的から選ぶ。targets の中で一番近い場所へ案内する
   purposes: [
@@ -226,7 +228,8 @@ window.HOSPITAL = {
     { id: "blood", name: "採血・尿検査・心電図などの検査", short: "採血・検査", targets: ["blood"] },
     { id: "image", name: "CT・MRI・レントゲン", short: "CT・MRI", targets: ["radio"] },
     { id: "scope", name: "胃カメラ・大腸カメラ（内視鏡）", short: "内視鏡", targets: ["endoscopy"] },
-    { id: "pay", name: "会計・支払い（自動支払機）", short: "会計", amenity: "pay", note: "支払いの相談や窓口での手続きは3階の総合受付へ（推定）" },
+    { id: "account", name: "会計（総合受付）", short: "会計", targets: ["reception"] },
+    { id: "pay", name: "支払い（自動支払機）", short: "支払い", amenity: "pay" },
     { id: "medicine", name: "お薬の受け取り", short: "お薬", targets: ["pharm"] },
     { id: "admission", name: "入院の手続き・術前の説明", short: "入院手続き", targets: ["support"] },
     { id: "chemo", name: "点滴・抗がん剤治療", short: "点滴・化学療法", targets: ["chemo"] },
@@ -235,10 +238,10 @@ window.HOSPITAL = {
     { id: "toilet", name: "トイレ（いちばん近い所）", short: "トイレ", amenity: "toilet" },
     { id: "shop", name: "コンビニ・売店", short: "コンビニ", targets: ["seven", "greenleaves"] },
     { id: "cafe", name: "カフェ・食事", short: "カフェ", targets: ["cafecore", "ffields"] },
-    { id: "atm", name: "ATM", short: "ATM", amenity: "atm" },
+    { id: "vending", name: "自動販売機", short: "自販機", amenity: "vending" },
     { id: "lostfound", name: "落とし物", short: "落とし物", targets: ["lost"] },
     { id: "exit", name: "駅へ帰る（駅デッキ）", short: "駅へ", targets: ["deck"] }
   ],
 
-  quick: ["first", "blood", "pay", "medicine", "image", "toilet", "shop", "exit"]
+  quick: ["first", "blood", "account", "pay", "medicine", "toilet", "vending", "shop"]
 };
