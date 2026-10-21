@@ -85,6 +85,7 @@
         <div class="viewswitch" role="group" aria-label="地図の表示">
           <button type="button" id="v2d" class="on" aria-pressed="true">平面マップ</button>
           <button type="button" id="v3d" aria-pressed="false">3Dマップ</button>
+          <button type="button" id="vwalk" aria-pressed="false">ストリートビュー</button>
         </div>
         <div class="tabs" id="tabs" role="tablist" aria-label="表示する階"></div>
         <div class="mapwrap" id="map2d">
@@ -101,6 +102,10 @@
         <div class="map3dwrap" id="map3dwrap" hidden>
           <div class="map3d" id="map3d" role="img" aria-label="各階を積み重ねた3Dマップと経路"></div>
           <p class="map3d-hint">ドラッグで回転、ピンチ・ホイールで拡大縮小。赤い線が経路、緑が出発、赤が到着です。</p>
+        </div>
+        <div class="walkwrap" id="walkwrap" hidden>
+          <div class="walk" id="walk" aria-label="経路を目線の高さで歩いて確認する表示"></div>
+          <p class="map3d-hint">「進む」や画面のタップで約3mずつ進みます。ドラッグで見回せます。壁や部屋はフロアマップから自動で起こした目安で、実際の内装とは異なります。施設のイラストはイメージです。</p>
         </div>
       </div>
       <div class="stepcol">

@@ -207,14 +207,24 @@
 
   /* ---------- 3D表示（必要になったときに three.js を読み込む） ---------- */
   let lib3d = null;
+  // WebGL が使えるか（使えない端末・アプリ内ブラウザでは3D表示ができない）
+  const hasWebGL = () => {
+    try { const c = document.createElement("canvas"); return !!(window.WebGLRenderingContext && (c.getContext("webgl") || c.getContext("experimental-webgl"))); }
+    catch (e) { return false; }
+  };
+  const failMsg = (what, e) => hasWebGL()
+    ? `<div class="loading">${what}を表示できませんでした。<br>ページを再読み込みしてお試しください。<small>（${String(e && e.message || e).slice(0, 80)}）</small></div>`
+    : `<div class="loading">この端末・ブラウザでは${what}（WebGL）が使えません。<br>Safari や Chrome で開くか、平面マップをご利用ください。</div>`;
   const loadScript = (src) => new Promise((ok, ng) => {
     const s = document.createElement("script");
     s.src = src; s.onload = ok; s.onerror = ng;
     document.head.appendChild(s);
   });
+  let libThree = null;
+  const loadThree = () => (libThree = libThree || loadScript("vendor/three.min.js"));
   function load3d() {
     if (!lib3d) {
-      lib3d = loadScript("vendor/three.min.js")
+      lib3d = loadThree()
         .then(() => loadScript("vendor/OrbitControls.js"))
         .then(() => loadScript("view3d.js"));
     }
@@ -229,16 +239,35 @@
         H, runs: state.runs, floors: state.floors,
         from: placeById[state.src], to: placeById[state.dst]
       });
-    }).catch(() => { el.innerHTML = '<div class="loading">3Dマップを表示できませんでした。</div>'; });
+    }).catch((e) => {
+      if (!window.View3D) { lib3d = null; if (!window.THREE) libThree = null; } // 読み込み失敗は次回やり直す
+      el.innerHTML = failMsg("3Dマップ", e);
+    });
+  }
+  let libWalk = null;
+  function drawWalk() {
+    const el = $("walk");
+    if (!window.Walk) el.innerHTML = '<div class="loading">ストリートビューを読み込み中…</div>';
+    libWalk = libWalk || loadThree().then(() => loadScript("walk.js"));
+    libWalk.then(() => {
+      window.Walk.render(el, {
+        H, runs: state.runs, places: H.places,
+        from: placeById[state.src], to: placeById[state.dst]
+      });
+    }).catch((e) => {
+      if (!window.Walk) { libWalk = null; if (!window.THREE) libThree = null; }
+      el.innerHTML = failMsg("ストリートビュー", e);
+    });
   }
   function setView(v) {
     state.view = v;
-    const is3d = v === "3d";
-    $("v2d").classList.toggle("on", !is3d); $("v2d").setAttribute("aria-pressed", String(!is3d));
-    $("v3d").classList.toggle("on", is3d); $("v3d").setAttribute("aria-pressed", String(is3d));
-    $("map2d").hidden = is3d; $("tabs").hidden = is3d; $("map3dwrap").hidden = !is3d;
-    if (is3d) draw3d();
-    else if (window.View3D) window.View3D.dispose();
+    for (const [id, key] of [["v2d", "2d"], ["v3d", "3d"], ["vwalk", "walk"]]) {
+      $(id).classList.toggle("on", v === key); $(id).setAttribute("aria-pressed", String(v === key));
+    }
+    $("map2d").hidden = v !== "2d"; $("tabs").hidden = v !== "2d";
+    $("map3dwrap").hidden = v !== "3d"; $("walkwrap").hidden = v !== "walk";
+    if (v === "3d") draw3d(); else if (window.View3D) window.View3D.dispose();
+    if (v === "walk") drawWalk(); else if (window.Walk) window.Walk.dispose();
   }
 
   function update(pushUrl = true) {
@@ -309,6 +338,7 @@
     renderTabs();
     selectFloor(0);
     if (state.view === "3d") draw3d();
+    if (state.view === "walk") drawWalk();
   }
 
   function renderTabs() {
@@ -419,7 +449,11 @@
   });
   $("v2d").addEventListener("click", () => setView("2d"));
   $("v3d").addEventListener("click", () => setView("3d"));
-  window.addEventListener("resize", () => { if (state.view === "3d" && window.View3D) window.View3D.resize($("map3d")); });
+  $("vwalk").addEventListener("click", () => setView("walk"));
+  window.addEventListener("resize", () => {
+    if (state.view === "3d" && window.View3D) window.View3D.resize($("map3d"));
+    if (state.view === "walk" && window.Walk) window.Walk.resize();
+  });
   $("zoom").addEventListener("click", () => { state.zoom = !state.zoom; drawFloor(state.floors[state.cur]); });
   $("prev").addEventListener("click", () => selectFloor(Math.max(0, state.cur - 1)));
   $("next").addEventListener("click", () => selectFloor(Math.min(state.floors.length - 1, state.cur + 1)));

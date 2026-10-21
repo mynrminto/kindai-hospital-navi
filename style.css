@@ -261,3 +261,29 @@ select:focus-visible, button:focus-visible, a:focus-visible, input:focus-visible
   .stepcol .actions { justify-content: flex-start; }
 }
 
+
+/* ストリートビュー風 */
+.viewswitch { flex-wrap: wrap; }
+.walkwrap { border: 1px solid var(--line); border-radius: 4px; overflow: hidden; background: #fff; }
+.walk { position: relative; outline: none; background: #fff; }
+.walk .loading { display: grid; place-items: center; aspect-ratio: 4 / 3; color: var(--navy); font-size: 14px; background: #eef3f6; }
+.w-view { position: relative; aspect-ratio: 4 / 3; background: #eef3f6; overflow: hidden; }
+.w-stage { position: absolute; inset: 0; touch-action: none; cursor: grab; }
+.w-stage canvas { display: block; }
+.w-top { position: absolute; left: 10px; top: 10px; display: flex; align-items: center; gap: 8px; padding: 6px 10px 6px 6px; background: rgba(255,255,255,.94); border-radius: 4px; box-shadow: 0 1px 4px rgba(0,0,0,.15); max-width: calc(100% - 20px); pointer-events: none; }
+.w-floor { flex: none; background: var(--navy); color: #fff; font: 600 15px "Work Sans", sans-serif; padding: 3px 8px; border-radius: 3px; }
+.w-step { font-size: 14px; font-weight: 700; color: var(--ink); line-height: 1.4; }
+.w-photo { position: absolute; right: 10px; bottom: 10px; width: min(44%, 230px); margin: 0; background: #fff; border-radius: 4px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,.25); pointer-events: none; }
+.w-photo img { display: block; width: 100%; aspect-ratio: 3 / 2; object-fit: cover; background: var(--pale); }
+.w-photo figcaption { font-size: 11px; line-height: 1.4; padding: 5px 7px; color: var(--muted); }
+.w-fade { position: absolute; inset: 0; display: grid; place-items: center; background: rgba(0,79,128,.92); color: #fff; font-size: 18px; font-weight: 700; opacity: 0; transition: opacity .35s; pointer-events: none; }
+.w-fade.on { opacity: 1; }
+.w-bottom { padding: 10px; border-top: 1px solid var(--line); }
+.w-bar { height: 4px; background: var(--pale); border-radius: 2px; overflow: hidden; margin-bottom: 8px; }
+.w-bar i { display: block; height: 100%; width: 0; background: var(--red); transition: width .3s; }
+.w-btns { display: grid; grid-template-columns: 1fr 1.3fr 1fr; gap: 8px; }
+.w-btns button { font: 700 14px inherit; font-family: inherit; padding: 10px 6px; border: 1px solid var(--navy); border-radius: 4px; background: #fff; color: var(--navy); cursor: pointer; }
+.w-btns .w-auto { background: var(--navy); color: #fff; }
+.w-btns button:disabled { opacity: .45; cursor: default; }
+.map3d .loading, .walk .loading { text-align: center; padding: 16px; line-height: 1.7; }
+.loading small { display: block; font-size: 11px; color: var(--muted); }

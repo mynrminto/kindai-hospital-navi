@@ -220,6 +220,10 @@ window.HOSPITAL = {
     { kind: "vending", f: 1, at: [613, 437] }, { kind: "vending", f: 2, at: [592, 987] }, { kind: "vending", f: 3, at: [590, 272] },
     { kind: "vending", f: 4, at: [583, 433] }, { kind: "vending", f: 5, at: [598, 985] }, { kind: "vending", f: 6, at: [608, 410] }
   ],
+  // 施設のイラスト（公式サイトの院内写真をもとにイラスト調に描き直したもの。写真そのものは使わない）
+  illustBase: "maps/illust/",
+  illust: { seven: ["seven.webp"], greenleaves: ["greenleaves.webp"], laundry: ["laundry.webp"], cafecore: ["cafecore.webp"], cosme: ["cosme.webp"], ffields: ["ffields.webp"] },
+
   amenityNames: { toilet: "トイレ", pay: "自動支払機", vending: "自動販売機" },
 
   // 目的から選ぶ。targets の中で一番近い場所へ案内する
