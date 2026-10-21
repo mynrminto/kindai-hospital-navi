@@ -28,13 +28,17 @@
       <span class="dot from" aria-hidden="true"></span>
       <label for="from">いまいる場所</label>
       <select id="from"></select>
+      <button type="button" class="linkbtn" id="pickbtn">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 3l-.16.03L15 5.1 9 3 3.36 4.9c-.21.07-.36.25-.36.48V20.5c0 .28.22.5.5.5l.16-.03L9 18.9l6 2.1 5.64-1.9c.21-.07.36-.25.36-.48V3.5c0-.28-.22-.5-.5-.5zM15 19l-6-2.11V5l6 2.11V19z"/></svg>
+        地図をタップして現在地を選ぶ
+      </button>
     </div>
     <button class="swap" id="swap" type="button" aria-label="出発地と目的地を入れ替える">
       <svg viewBox="0 0 24 24"><path d="M7 4v12.2l-2.6-2.6L3 15l5 5 5-5-1.4-1.4L9 16.2V4H7zm10 16V7.8l2.6 2.6L21 9l-5-5-5 5 1.4 1.4L15 7.8V20h2z"/></svg>
     </button>
     <div class="field">
       <span class="dot to" aria-hidden="true"></span>
-      <label for="to">行きたい場所</label>
+      <label for="to">行きたい場所・目的</label>
       <select id="to"></select>
     </div>
     <div class="chips" id="chips" aria-label="よく使う行き先"></div>
@@ -43,6 +47,18 @@
       <span class="sw" aria-hidden="true"></span>
       <span>エレベーターのみ（車いす・ベビーカー・杖の方）</span>
     </label>
+  </section>
+
+  <section class="card mappick" id="mappick" hidden aria-label="地図から現在地を選ぶ">
+    <div class="pickhead">
+      <b>地図から現在地を選ぶ</b>
+      <button type="button" class="ghost" id="pickclose">閉じる</button>
+    </div>
+    <div class="tabs" id="picktabs" aria-label="階"></div>
+    <div class="mapwrap pickscroll"><svg id="pickmap" role="img" aria-label="フロアマップ（タップして現在地を選ぶ）"></svg></div>
+    <p class="pickinfo" id="pickinfo"></p>
+    <p class="hint">地図は左右にスクロールできます。</p>
+    <button type="button" class="primary" id="pickok" disabled>ここを現在地にする</button>
   </section>
 
   <section class="card result" id="result" hidden>
@@ -66,7 +82,7 @@
   </section>
 
   <section class="card empty" id="empty">
-    <p>上で <b>いまいる場所</b> と <b>行きたい場所</b> を選ぶと、通る階と道順を表示します。</p>
+    <p>上で <b>いまいる場所</b> と <b>行きたい場所・目的</b> を選ぶと、通る階と道順を表示します。</p>
     <p class="hint">駅から来た方は「駅デッキ側 中央出入口」を選んでください。初めての受診は <b>2号館3階 総合受付</b> へ。</p>
   </section>
 
@@ -75,6 +91,7 @@
     <ul>
       <li>地図は近畿大学病院 公式サイトの<a href="https://www.med.kindai.ac.jp/floormap_facility.html" target="_blank" rel="noopener">フロアマップ</a>の画像を使用しています（2026年10月時点）。</li>
       <li>廊下・エレベーター・入口の位置は公式マップから読み取っています。<b>駅デッキがつながる出入口、7号館（管理棟）への行き方、所要時間は推定</b>です。</li>
+      <li>7〜10階の病棟フロアは院内図面をもとに作成した簡略図です（病棟名・見舞客用エレベーター・トイレのみ掲載）。病棟へは各病棟のスタッフステーションでお声がけください。</li>
       <li>工事や混雑で通れない場合があります。実際の院内表示とスタッフの案内を優先してください。</li>
       <li>交通アクセス：<a href="https://www.med.kindai.ac.jp/traffic_access.html" target="_blank" rel="noopener">公式サイト</a></li>
     </ul>

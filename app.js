@@ -9,8 +9,12 @@
   const EV_PER_FLOOR = 8;    // 1階あたり（秒）
   const ESC_PER_FLOOR = 25;  // エスカレーター（秒）
 
-  const places = H.places;
+  const places = H.places.slice();
+  H.amenities.forEach((a, i) => places.push({
+    id: `am_${a.kind}_${i}`, name: H.amenityNames[a.kind], f: a.f, at: a.at, amenity: a.kind, group: "設備"
+  }));
   const placeById = Object.fromEntries(places.map((p) => [p.id, p]));
+  const purposeById = Object.fromEntries(H.purposes.map((p) => [p.id, p]));
   const liftById = Object.fromEntries(H.lifts.map((l) => [l.id, l]));
 
   /* ---------- グラフ ---------- */
@@ -44,11 +48,27 @@
       addEdge(`L:${l.id}:${f1}`, `L:${l.id}:${f2}`, (f2 - f1) * (l.kind === "ev" ? EV_PER_FLOOR : ESC_PER_FLOOR));
     }
   }
-  for (const p of places) {
-    const id = "p:" + p.id;
-    addNode(id, { f: p.f, x: p.at[0], y: p.at[1], place: p.id });
-    addEdge(id, `${p.f}:${p.via}`, walkSec(nodes[id], nodes[`${p.f}:${p.via}`]));
+  // 施設を最寄りの通路ノードにつなぐ（via 指定があればそれを使う）
+  function nearestNode(f, x, y) {
+    let best = null, bd = Infinity;
+    for (const [id, n] of Object.entries(nodes)) {
+      if (n.f !== f || n.lift || n.place) continue;
+      const d = Math.hypot(n.x - x, n.y - y);
+      if (d < bd) { bd = d; best = id; }
+    }
+    return { id: best, dist: bd };
   }
+  function attachPlace(p) {
+    const id = "p:" + p.id;
+    if (nodes[id]) { // 付け直し
+      for (const e of adj[id]) adj[e.to] = adj[e.to].filter((x) => x.to !== id);
+      adj[id] = [];
+    }
+    addNode(id, { f: p.f, x: p.at[0], y: p.at[1], place: p.id });
+    const via = p.via ? `${p.f}:${p.via}` : nearestNode(p.f, p.at[0], p.at[1]).id;
+    addEdge(id, via, walkSec(nodes[id], nodes[via]));
+  }
+  places.forEach(attachPlace);
 
   function shortest(src, dst, barrierFree) {
     const d = { [src]: 0 }, prev = {}, done = new Set();
@@ -100,10 +120,15 @@
     if (f === 2 && x > 1735) return "3号館";
     return "2号館";
   }
-  const placeLabel = (p) => p.outside ? `${p.name}（${p.outside}）` : `${p.name}（${p.area === "3階" ? "" : p.area + " "}${p.f}階）`;
+  const placeLabel = (p) => {
+    if (p.outside) return `${p.name}（${p.outside}）`;
+    const area = p.area || areaAt(p.f, p.at[0], p.at[1]);
+    return `${p.name}（${area === "3階" ? "" : area + " "}${p.f}階）`;
+  };
 
   function buildSteps(runs, from, to) {
     const steps = [{ kind: "start", f: from.f, text: `<b>${from.name}</b>（${from.f}階）を出発` }];
+    const purpose = state.purpose;
     runs.forEach((r, i) => {
       const areas = [];
       for (const [x, y] of r.pts) {
@@ -131,44 +156,50 @@
         }
       }
     });
-    steps.push({ kind: "goal", f: to.f, text: `<b>${placeLabel(to)}</b> に到着` });
+    steps.push({ kind: "goal", f: to.f, text: `<b>${placeLabel(to)}</b> に到着${purpose && purpose.note ? `<br><small>${purpose.note}</small>` : ""}` });
     return steps;
   }
 
   /* ---------- UI ---------- */
   const fromSel = $("from"), toSel = $("to"), bf = $("bf");
 
-  function fillSelect(sel) {
+  function addGroup(sel, label, items) {
+    const og = document.createElement("optgroup");
+    og.label = label;
+    for (const [value, text] of items) {
+      const op = document.createElement("option");
+      op.value = value; op.textContent = text;
+      og.appendChild(op);
+    }
+    sel.appendChild(og);
+  }
+  function fillSelect(sel, withPurpose) {
     sel.innerHTML = '<option value="">選んでください</option>';
-    const groups = [{ label: "入口（3階）", list: places.filter((p) => p.group === "入口") }];
+    if (!withPurpose) {
+      const here = document.createElement("option");
+      here.value = "here"; here.textContent = "地図で選んだ場所"; here.hidden = true; here.id = "hereopt";
+      sel.appendChild(here);
+    }
+    if (withPurpose) addGroup(sel, "目的から選ぶ", H.purposes.map((p) => ["goal:" + p.id, p.name]));
+    const label = (p) => (p.group === "入口" || p.outside ? p.name : `${p.name}　${p.f}階`);
+    addGroup(sel, "入口（3階）", places.filter((p) => p.group === "入口").map((p) => [p.id, label(p)]));
     for (const f of Object.keys(H.floors).map(Number)) {
       const list = places.filter((p) => p.f === f && !p.group);
-      if (list.length) groups.push({ label: `${f}階`, list });
+      if (list.length) addGroup(sel, `${f}階`, list.map((p) => [p.id, label(p)]));
     }
-    groups.push({ label: "病棟", list: places.filter((p) => p.group === "病棟") });
-    groups.push({ label: "7号館（管理棟）", list: places.filter((p) => p.group === "7号館（管理棟）") });
-    for (const g of groups) {
-      const og = document.createElement("optgroup");
-      og.label = g.label;
-      for (const p of g.list) {
-        const op = document.createElement("option");
-        op.value = p.id;
-        op.textContent = p.group === "入口" || p.outside ? p.name : `${p.name}　${p.f}階`;
-        og.appendChild(op);
-      }
-      sel.appendChild(og);
-    }
+    addGroup(sel, "病棟", places.filter((p) => p.group === "病棟").map((p) => [p.id, label(p)]));
+    addGroup(sel, "7号館（管理棟）", places.filter((p) => p.group === "7号館（管理棟）").map((p) => [p.id, label(p)]));
   }
-  fillSelect(fromSel);
-  fillSelect(toSel);
+  fillSelect(fromSel, false);
+  fillSelect(toSel, true);
 
   const chips = $("chips");
   for (const id of H.quick) {
-    const p = placeById[id];
+    const p = purposeById[id];
     const b = document.createElement("button");
-    b.type = "button"; b.className = "chip"; b.dataset.id = id;
+    b.type = "button"; b.className = "chip"; b.dataset.id = "goal:" + id;
     b.textContent = p.short || p.name;
-    b.addEventListener("click", () => { toSel.value = id; update(); });
+    b.addEventListener("click", () => { toSel.value = "goal:" + id; update(); });
     chips.appendChild(b);
   }
 
@@ -180,6 +211,7 @@
     if (pushUrl) {
       const q = new URLSearchParams();
       if (a) q.set("from", a);
+      if (a === "here") { q.set("hf", placeById.here.f); q.set("hx", placeById.here.at[0]); q.set("hy", placeById.here.at[1]); }
       if (b) q.set("to", b);
       if (bf.checked) q.set("bf", "1");
       history.replaceState(null, "", q.toString() ? "?" + q : location.pathname);
@@ -187,15 +219,29 @@
     if (!a || !b) { $("result").hidden = true; $("empty").hidden = false; return; }
     $("empty").hidden = true; $("result").hidden = false;
 
-    const from = placeById[a], to = placeById[b];
-    if (a === b || (from.at[0] === to.at[0] && from.at[1] === to.at[1] && from.f === to.f)) {
+    // 目的が選ばれたら、候補の中でいちばん近い場所を行き先にする
+    let purpose = null, dstId = b;
+    if (b.startsWith("goal:")) {
+      purpose = purposeById[b.slice(5)];
+      const cands = purpose.amenity ? places.filter((p) => p.amenity === purpose.amenity).map((p) => p.id) : purpose.targets;
+      let best = null;
+      for (const c of cands) {
+        if (c === a) { best = { id: c, sec: 0 }; break; }
+        const r = shortest("p:" + a, "p:" + c, bf.checked);
+        if (r && (!best || r.sec < best.sec)) best = { id: c, sec: r.sec };
+      }
+      dstId = best ? best.id : cands[0];
+    }
+    state.purpose = purpose;
+    const from = placeById[a], to = placeById[dstId];
+    if (a === dstId || (from.at[0] === to.at[0] && from.at[1] === to.at[1] && from.f === to.f)) {
       $("summary").innerHTML = `<p class="same">出発地と目的地が同じ場所です。</p>`;
       $("steps").innerHTML = "";
-      state = { ...state, floors: [from.f], runs: [], src: a, dst: b };
+      state = { ...state, floors: [from.f], runs: [], src: a, dst: dstId };
       renderTabs(); selectFloor(0);
       return;
     }
-    const res = shortest("p:" + a, "p:" + b, bf.checked);
+    const res = shortest("p:" + a, "p:" + dstId, bf.checked);
     if (!res) {
       $("summary").innerHTML = `<p class="same">経路が見つかりませんでした。</p>`;
       $("steps").innerHTML = ""; $("tabs").innerHTML = ""; $("map").innerHTML = "";
@@ -204,13 +250,13 @@
     const runs = splitRuns(res.path);
     const floors = [];
     for (const r of runs) if (!floors.includes(r.f)) floors.push(r.f);
-    state = { ...state, floors, runs, src: a, dst: b };
+    state = { ...state, floors, runs, src: a, dst: dstId };
 
     const min = Math.max(1, Math.round(res.sec / 60));
     const rides = runs.filter((r) => r.exit).length;
     $("summary").innerHTML =
       `<div class="time"><span class="num">約${min}</span><span class="unit">分</span></div>` +
-      `<div class="meta"><span class="fl">${floors.map((f) => f + "階").join(" → ")}</span>` +
+      `<div class="meta">${purpose ? `<span class="dest">${purpose.short} → ${placeLabel(to)}</span>` : ""}<span class="fl">${floors.map((f) => f + "階").join(" → ")}</span>` +
       `<span>${rides ? `エレベーター等 ${rides}回` : "同じ階で移動"}${bf.checked ? "（エレベーターのみ）" : ""}</span>` +
       `<span class="est">所要時間はゆっくり歩いた場合の目安です</span></div>`;
 
@@ -344,10 +390,87 @@
     setTimeout(() => (btn.textContent = "この経路のリンクをコピー"), 2000);
   });
 
-  // URL パラメータ（?from=deck&to=reception&bf=1）
+  /* ---------- 地図から現在地を選ぶ ---------- */
+  const pick = { f: 3, pt: null };
+  function setHere(f, x, y, name) {
+    const p = { id: "here", name: name || "地図で選んだ場所", f, at: [Math.round(x), Math.round(y)] };
+    placeById.here = p;
+    attachPlace(p);
+    const op = $("hereopt");
+    op.hidden = false; op.textContent = `${p.name}（${f}階）`;
+    fromSel.value = "here";
+  }
+  function drawPick() {
+    const svg = $("pickmap"), fl = H.floors[pick.f];
+    svg.innerHTML = "";
+    svg.setAttribute("viewBox", `0 0 ${fl.w} ${fl.h}`);
+    el("image", { href: fl.img, x: 0, y: 0, width: fl.w, height: fl.h }, svg);
+    if (pick.pt) {
+      const g = el("g", { class: "pin from", transform: `translate(${pick.pt.x} ${pick.pt.y})` }, svg);
+      el("circle", { r: 40, class: "halo" }, g);
+      el("circle", { r: 22 }, g);
+      el("text", { y: 9 }, g, "今");
+    }
+    [...$("picktabs").children].forEach((b) => b.classList.toggle("on", +b.dataset.f === pick.f));
+  }
+  function openPick() {
+    const cur = placeById[fromSel.value];
+    pick.f = cur ? cur.f : 3;
+    pick.pt = null;
+    $("pickinfo").textContent = "いまいる場所を地図上でタップしてください。";
+    $("pickok").disabled = true;
+    $("mappick").hidden = false;
+    drawPick();
+    $("mappick").scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+  const pt = $("picktabs");
+  for (const f of Object.keys(H.floors).map(Number)) {
+    const b = document.createElement("button");
+    b.type = "button"; b.dataset.f = f; b.textContent = `${f}階`;
+    b.addEventListener("click", () => { pick.f = f; pick.pt = null; $("pickok").disabled = true; $("pickinfo").textContent = "いまいる場所を地図上でタップしてください。"; drawPick(); });
+    pt.appendChild(b);
+  }
+  $("pickmap").addEventListener("click", (ev) => {
+    const svg = $("pickmap");
+    const m = svg.getScreenCTM().inverse();
+    const p = new DOMPoint(ev.clientX, ev.clientY).matrixTransform(m);
+    const near = nearestNode(pick.f, p.x, p.y);
+    if (near.dist > 260) {
+      $("pickinfo").textContent = "建物の外のようです。廊下や部屋の近くをタップしてください。";
+      $("pickok").disabled = true; pick.pt = null; drawPick();
+      return;
+    }
+    // 施設の近くなら施設名を出す
+    let snap = null, sd = 70;
+    for (const pl of places) {
+      if (pl.f !== pick.f || pl.outside || pl.id === "here") continue;
+      const d = Math.hypot(pl.at[0] - p.x, pl.at[1] - p.y);
+      if (d < sd) { sd = d; snap = pl; }
+    }
+    pick.pt = { x: p.x, y: p.y, snap };
+    $("pickinfo").innerHTML = snap
+      ? `<b>${placeLabel(snap)}</b> の近く`
+      : `${pick.f}階・${areaAt(pick.f, p.x, p.y)}のこのあたり`;
+    $("pickok").disabled = false;
+    drawPick();
+  });
+  $("pickbtn").addEventListener("click", openPick);
+  $("pickclose").addEventListener("click", () => { $("mappick").hidden = true; });
+  $("pickok").addEventListener("click", () => {
+    const { x, y, snap } = pick.pt;
+    if (snap && !snap.amenity) fromSel.value = snap.id;
+    else setHere(pick.f, x, y, snap ? `${snap.name}の近く` : `${pick.f}階 ${areaAt(pick.f, x, y)}付近`);
+    $("mappick").hidden = true;
+    update();
+    $("result").scrollIntoView({ behavior: "smooth", block: "start" });
+  });
+
+  // URL パラメータ（?from=deck&to=goal:blood&bf=1、地図で選んだ現在地は from=here&hf=3&hx=..&hy=..）
   const q = new URLSearchParams(location.search);
-  fromSel.value = placeById[q.get("from")] ? q.get("from") : "deck";
-  if (placeById[q.get("to")]) toSel.value = q.get("to");
+  if (q.get("from") === "here" && H.floors[q.get("hf")]) setHere(+q.get("hf"), +q.get("hx"), +q.get("hy"));
+  else fromSel.value = placeById[q.get("from")] ? q.get("from") : "deck";
+  const qt = q.get("to") || "";
+  if (placeById[qt] || purposeById[qt.replace(/^goal:/, "")]) toSel.value = qt;
   bf.checked = q.get("bf") === "1";
   update(false);
 })();

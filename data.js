@@ -15,7 +15,11 @@ window.HOSPITAL = {
     4: { img: "maps/floor04.png", w: 1758, h: 1060 },
     5: { img: "maps/floor05.png", w: 1758, h: 1060 },
     6: { img: "maps/floor06.png", w: 1758, h: 1060 },
-    7: { img: "maps/floor07.png", w: 1758, h: 1060 }
+    7: { img: "maps/floor07.png", w: 1758, h: 1060 },
+    // 8〜10階は院内図面をもとに作成した簡略図（tools/make_ward_maps.js で生成）
+    8: { img: "maps/floor08.png", w: 1758, h: 1060 },
+    9: { img: "maps/floor09.png", w: 1758, h: 1060 },
+    10: { img: "maps/floor10.png", w: 1758, h: 1060 }
   },
 
   // 各階の通路ノード（廊下の分岐点など）
@@ -57,7 +61,10 @@ window.HOSPITAL = {
       x1: [700, 470], x2: [900, 470], x3: [1083, 470], x4: [1105, 470], x7: [1530, 470], x8: [1530, 600], ev2e: [1504, 600],
       x9: [1530, 727], x6: [1083, 727], x5: [1083, 600], ev2w: [1124, 600]
     },
-    7: { ev2w: [1124, 598], y1: [1090, 598], y2: [1090, 745] }
+    7: { ev2w: [1124, 598], y1: [1090, 598], y2: [1090, 745], t1: [1110, 470], t2: [1500, 470], e1: [1525, 598], ev2e: [1491, 598], e2: [1510, 700], b2: [1440, 745] },
+    8: { ev2w: [1124, 598], x5: [1081, 598], x4: [1081, 470], x7: [1535, 470], x8: [1535, 598], ev2e: [1491, 598], x9: [1535, 728], x6: [1081, 728] },
+    9: { ev2w: [1124, 598], x5: [1081, 598], x4: [1081, 470], x7: [1535, 470], x8: [1535, 598], ev2e: [1491, 598], x9: [1535, 728], x6: [1081, 728] },
+    10: { ev2w: [1124, 598], x5: [1081, 598], x4: [1081, 470], x7: [1535, 470], x8: [1535, 598], ev2e: [1491, 598], x9: [1535, 728], x6: [1081, 728] }
   },
 
   // 通路（"a-b-c" は a→b→c とつながる廊下）
@@ -72,15 +79,18 @@ window.HOSPITAL = {
     5: ["ev1w-w-t-c-x1-x2-x3-x4-x11-x7-x8-x9-x10-x6-x5-x4", "x5-ev2w", "x8-ev2e", "c-d-btmR-btm",
         "d-ev1c", "d-esc", "d-inner", "w-l1-l2-btm"],
     6: ["ev1w-w-a6-b6-c-x1-x2-x3-x4-x7-x8-x9-x6-x5-x3", "x5-ev2w", "x8-ev2e", "c-d-m", "d-ev1c", "d-esc"],
-    7: ["ev2w-y1-y2"]
+    7: ["ev2w-y1-y2-b2-e2-e1-t2-t1-y1", "e1-ev2e"],
+    8: ["ev2w-x5-x4-x7-x8-x9-x6-x5", "x8-ev2e"],
+    9: ["ev2w-x5-x4-x7-x8-x9-x6-x5", "x8-ev2e"],
+    10: ["ev2w-x5-x4-x7-x8-x9-x6-x5", "x8-ev2e"]
   },
 
   // 階をまたぐ移動
   lifts: [
     { id: "ev1w", name: "1号館 西側エレベーター", kind: "ev", floors: [1, 2, 3, 4, 5, 6] },
     { id: "ev1c", name: "1号館 中央エレベーター", kind: "ev", floors: [1, 2, 3, 4, 5, 6] },
-    { id: "ev2w", name: "2号館 西EV", kind: "ev", floors: [2, 3, 4, 5, 6, 7] },
-    { id: "ev2e", name: "2号館 東EV", kind: "ev", floors: [2, 3, 5, 6] },
+    { id: "ev2w", name: "2号館 西EV", kind: "ev", floors: [2, 3, 4, 5, 6, 7, 8, 9, 10] },
+    { id: "ev2e", name: "2号館 東EV", kind: "ev", floors: [2, 3, 5, 6, 7, 8, 9, 10] },
     { id: "esc", name: "1号館 エスカレーター", kind: "esc", floors: [2, 3, 4, 5, 6] }
   ],
 
@@ -166,11 +176,69 @@ window.HOSPITAL = {
     // 7階
     { id: "rehab", name: "リハビリテーション室", f: 7, at: [1095, 853], via: "y2", area: "2号館" },
 
+    // 7〜10階 病棟（院内図面より。病床数・職員用設備は省略）
+    { id: "w7wa", name: "7西A病棟（血液内科）", f: 7, at: [1070, 350], via: "t1", area: "2号館", group: "病棟" },
+    { id: "w7ea", name: "7東A病棟（整形外科・形成外科・皮膚科）", f: 7, at: [1530, 350], via: "t2", area: "2号館", group: "病棟" },
+    { id: "w7eb", name: "7東B病棟（整形外科）", f: 7, at: [1530, 860], via: "b2", area: "2号館", group: "病棟" },
+    { id: "w8wa", name: "8西A病棟（消化器内科）", f: 8, at: [1070, 350], via: "x4", area: "2号館", group: "病棟" },
+    { id: "w8ea", name: "8東A病棟（脳神経外科・消化器内科）", f: 8, at: [1530, 350], via: "x7", area: "2号館", group: "病棟" },
+    { id: "w8wb", name: "8西B病棟（呼吸器内科・内分泌代謝糖尿病内科・消化器内科）", f: 8, at: [1070, 860], via: "x6", area: "2号館", group: "病棟" },
+    { id: "w8eb", name: "8東B病棟（呼吸器内科・消化器内科・外科）", f: 8, at: [1530, 860], via: "x9", area: "2号館", group: "病棟" },
+    { id: "w9wa", name: "9西A病棟（腫瘍内科・緩和ケア・放射線治療科）", f: 9, at: [1070, 350], via: "x4", area: "2号館", group: "病棟" },
+    { id: "w9ea", name: "9東A病棟（耳鼻咽喉科）", f: 9, at: [1530, 350], via: "x7", area: "2号館", group: "病棟" },
+    { id: "w9wb", name: "9西B病棟（眼科・脳神経内科・麻酔科）", f: 9, at: [1070, 860], via: "x6", area: "2号館", group: "病棟" },
+    { id: "w9eb", name: "9東B病棟（外科（肝胆膵・乳腺・下部））", f: 9, at: [1530, 860], via: "x9", area: "2号館", group: "病棟" },
+    { id: "w10wa", name: "10西A病棟（心臓血管外科・循環器内科・腎臓内科）", f: 10, at: [1070, 350], via: "x4", area: "2号館", group: "病棟" },
+    { id: "w10ea", name: "10東A病棟（泌尿器科・膠原病内科・放射線診断科・歯科口腔外科）", f: 10, at: [1530, 350], via: "x7", area: "2号館", group: "病棟" },
+    { id: "w10wb", name: "10西B病棟（循環器内科）", f: 10, at: [1070, 860], via: "x6", area: "2号館", group: "病棟" },
+    { id: "w10eb", name: "10東B病棟（外科（上部・下部））", f: 10, at: [1530, 860], via: "x9", area: "2号館", group: "病棟" },
+
     // 7号館（管理棟）：公式フロアマップ画像に掲載がないため、駅デッキ側出入口までを案内
     { id: "cafecore", name: "CAFE CORE（カフェ・コア）", f: 3, at: [700, 860], via: "ent_c", area: "7号館", group: "7号館（管理棟）", outside: "7号館（管理棟）3階" },
     { id: "cosme", name: "化粧品コーナー・西村眼鏡店・ヘアケア", f: 3, at: [700, 860], via: "ent_c", area: "7号館", group: "7号館（管理棟）", outside: "7号館（管理棟）3階" },
     { id: "ffields", name: "ffields（エフフィールド）", f: 3, at: [700, 860], via: "ent_c", area: "7号館", group: "7号館（管理棟）", outside: "7号館（管理棟）2階" }
   ],
 
-  quick: ["reception", "blood", "pharm", "radio", "chemo", "seven", "greenleaves", "deck"]
+  // 設備（公式フロアマップのアイコン位置）。行き先の「目的」から最寄りを探すのに使う
+  amenities: [
+    { kind: "toilet", f: 1, at: [568, 557] },
+    { kind: "toilet", f: 2, at: [297, 332] }, { kind: "toilet", f: 2, at: [570, 556] },
+    { kind: "toilet", f: 2, at: [1069, 620] }, { kind: "toilet", f: 2, at: [1694, 795] },
+    { kind: "toilet", f: 3, at: [565, 400] }, { kind: "toilet", f: 3, at: [224, 529] },
+    { kind: "toilet", f: 3, at: [565, 711] }, { kind: "toilet", f: 3, at: [1244, 690] },
+    { kind: "toilet", f: 4, at: [561, 552] }, { kind: "toilet", f: 4, at: [221, 681] },
+    { kind: "toilet", f: 4, at: [561, 864] }, { kind: "toilet", f: 4, at: [950, 294] },
+    { kind: "toilet", f: 5, at: [561, 552] }, { kind: "toilet", f: 5, at: [220, 681] },
+    { kind: "toilet", f: 5, at: [561, 864] }, { kind: "toilet", f: 5, at: [1221, 493] }, { kind: "toilet", f: 5, at: [1221, 700] },
+    { kind: "toilet", f: 6, at: [568, 576] },
+    // 7〜10階：院内図面より（中央エレベーターホール脇）
+    { kind: "toilet", f: 7, at: [1242, 520] }, { kind: "toilet", f: 8, at: [1242, 520] },
+    { kind: "toilet", f: 9, at: [1242, 520] }, { kind: "toilet", f: 10, at: [1242, 520] },
+    { kind: "pay", f: 1, at: [613, 437] }, { kind: "pay", f: 2, at: [592, 987] }, { kind: "pay", f: 3, at: [590, 272] },
+    { kind: "pay", f: 4, at: [583, 433] }, { kind: "pay", f: 5, at: [598, 985] }, { kind: "pay", f: 6, at: [608, 410] },
+    { kind: "atm", f: 2, at: [928, 858] }, { kind: "atm", f: 3, at: [1240, 855] }
+  ],
+  amenityNames: { toilet: "トイレ", pay: "自動支払機", atm: "ATM" },
+
+  // 目的から選ぶ。targets の中で一番近い場所へ案内する
+  purposes: [
+    { id: "first", name: "初めての受診・受付", short: "初診・受付", targets: ["reception"] },
+    { id: "blood", name: "採血・尿検査・心電図などの検査", short: "採血・検査", targets: ["blood"] },
+    { id: "image", name: "CT・MRI・レントゲン", short: "CT・MRI", targets: ["radio"] },
+    { id: "scope", name: "胃カメラ・大腸カメラ（内視鏡）", short: "内視鏡", targets: ["endoscopy"] },
+    { id: "pay", name: "会計・支払い（自動支払機）", short: "会計", amenity: "pay", note: "支払いの相談や窓口での手続きは3階の総合受付へ（推定）" },
+    { id: "medicine", name: "お薬の受け取り", short: "お薬", targets: ["pharm"] },
+    { id: "admission", name: "入院の手続き・術前の説明", short: "入院手続き", targets: ["support"] },
+    { id: "chemo", name: "点滴・抗がん剤治療", short: "点滴・化学療法", targets: ["chemo"] },
+    { id: "radiotherapy", name: "放射線治療", short: "放射線治療", targets: ["rt"] },
+    { id: "consult", name: "がん・療養の相談", short: "がん相談", targets: ["cancer"] },
+    { id: "toilet", name: "トイレ（いちばん近い所）", short: "トイレ", amenity: "toilet" },
+    { id: "shop", name: "コンビニ・売店", short: "コンビニ", targets: ["seven", "greenleaves"] },
+    { id: "cafe", name: "カフェ・食事", short: "カフェ", targets: ["cafecore", "ffields"] },
+    { id: "atm", name: "ATM", short: "ATM", amenity: "atm" },
+    { id: "lostfound", name: "落とし物", short: "落とし物", targets: ["lost"] },
+    { id: "exit", name: "駅へ帰る（駅デッキ）", short: "駅へ", targets: ["deck"] }
+  ],
+
+  quick: ["first", "blood", "pay", "medicine", "image", "toilet", "shop", "exit"]
 };

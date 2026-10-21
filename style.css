@@ -36,6 +36,7 @@
 }
 
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 html { -webkit-text-size-adjust: 100%; }
 body {
   margin: 0;
@@ -161,3 +162,16 @@ select:focus-visible, button:focus-visible, input:focus-visible + .sw { outline:
 .note li { margin-bottom: 4px; }
 .note a { color: var(--accent); }
 .fine { font-size: 12px; margin-top: 10px; }
+
+.linkbtn { display: inline-flex; align-items: center; gap: 6px; margin-top: 6px; font: inherit; font-size: 14px; color: var(--accent); background: none; border: none; padding: 4px 0; cursor: pointer; justify-self: start; }
+.linkbtn svg { width: 18px; height: 18px; fill: currentColor; }
+.mappick { display: grid; gap: 10px; }
+.pickhead { display: flex; justify-content: space-between; align-items: center; }
+.pickscroll { overflow: auto; -webkit-overflow-scrolling: touch; }
+#pickmap { display: block; width: 170%; max-width: none; height: auto; cursor: crosshair; background: #fff; }
+.pickinfo { margin: 0; font-size: 15px; min-height: 1.6em; }
+.primary { font: inherit; font-size: 16px; font-weight: 700; padding: 12px; border-radius: 12px; border: none; background: var(--accent); color: #fff; cursor: pointer; }
+.primary:disabled { opacity: .4; cursor: default; }
+.meta .dest { font-size: 13px; color: var(--muted); }
+.steps small { color: var(--muted); font-size: 13px; }
+@media (min-width: 640px) { #pickmap { width: 100%; } }
