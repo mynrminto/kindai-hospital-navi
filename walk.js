@@ -41,7 +41,8 @@
       walk[r * cols + q] = n >= 3 ? 1 : 0;
     }
     fillHoles(walk, cols, rows);
-    floorCache[f] = { fl, img, px, cols, rows, walk };
+    const esc = findEscalator(f, px, cols, rows, walk);
+    floorCache[f] = { fl, img, px, cols, rows, walk, esc };
     return floorCache[f];
   }
 
@@ -77,10 +78,191 @@
         const x = x1 + (x2 - x1) * k / n, y = y1 + (y2 - y1) * k / n;
         const q0 = Math.floor(x / CELL), r0 = Math.floor(y / CELL);
         for (let r = r0 - rad; r <= r0 + rad; r++) for (let q = q0 - rad; q <= q0 + rad; q++) {
-          if (r >= 0 && q >= 0 && r < rows && q < cols) walk[r * cols + q] = 2;
+          if (r >= 0 && q >= 0 && r < rows && q < cols && walk[r * cols + q] !== 3) walk[r * cols + q] = 2;
         }
       }
     }
+  }
+
+
+  /* ---------- エスカレーター ---------- */
+  const FLOOR_H = 4.0; // 階高（m）
+  // フロアマップのエスカレーターの区画（淡い青の四角）を、ノード位置から塗りつぶしで探す
+  function findEscalator(f, px, cols, rows, walk) {
+    const n = opts.H.nodes[f] && opts.H.nodes[f].esc;
+    const lift = opts.H.lifts.find((l) => l.id === "esc");
+    if (!n || !lift || !lift.floors.includes(f)) return null;
+    const q0 = Math.floor(n[0] / CELL), r0 = Math.floor(n[1] / CELL);
+    // 区画の淡い青と、中のアイコン（紺・白）を同じ区画として扱う
+    const near = (p, c, tol) => Math.abs(p[0] - c[0]) + Math.abs(p[1] - c[1]) + Math.abs(p[2] - c[2]) < tol;
+    const same = (q, r) => {
+      const p = px(q * CELL + (CELL >> 1), r * CELL + (CELL >> 1));
+      if (near(p, [229, 237, 242], 24) || near(p, [0, 79, 128], 90)) return true;
+      return near(p, [255, 255, 255], 6) && Math.abs(q - q0) <= 4 && Math.abs(r - r0) <= 4;
+    };
+    const seen = new Set([r0 * cols + q0]), stack = [[q0, r0]];
+    let minQ = q0, maxQ = q0, minR = r0, maxR = r0;
+    while (stack.length && seen.size < 600) {
+      const [q, r] = stack.pop();
+      for (const [dq, dr] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const nq = q + dq, nr = r + dr, k = nr * cols + nq;
+        if (nq < 0 || nr < 0 || nq >= cols || nr >= rows || seen.has(k) || !same(nq, nr)) continue;
+        seen.add(k); stack.push([nq, nr]);
+        minQ = Math.min(minQ, nq); maxQ = Math.max(maxQ, nq); minR = Math.min(minR, nr); maxR = Math.max(maxR, nr);
+      }
+    }
+    if (seen.size < 12 || seen.size >= 600) return null;
+    // 区画は壁を立てずに吹き抜けとして扱う
+    for (let r = minR; r <= maxR; r++) for (let q = minQ; q <= maxQ; q++) walk[r * cols + q] = 3;
+    const x0 = minQ * CELL * M, x1 = (maxQ + 1) * CELL * M, z0 = minR * CELL * M, z1 = (maxR + 1) * CELL * M;
+    const alongZ = (z1 - z0) >= (x1 - x0);
+    const L = alongZ ? z1 - z0 : x1 - x0, W = alongZ ? x1 - x0 : z1 - z0;
+    const H = Math.min(L - 2.4, FLOOR_H / Math.tan(Math.PI / 6));
+    const LA = (L - H) / 2;
+    const e = { alongZ, x0, z0, x1, z1, L, W, H, LA, up: f < Math.max(...lift.floors), down: f > Math.min(...lift.floors) };
+    // 局所座標（s：上り方向の長さ、t：横）→ 世界座標
+    e.P = (s, t, y) => alongZ ? new THREE.Vector3((x0 + x1) / 2 + t, y, z0 + s) : new THREE.Vector3(x0 + s, y, (z0 + z1) / 2 + t);
+    e.local = (x, z) => alongZ ? [z - z0, x - (x0 + x1) / 2] : [x - x0, z - (z0 + z1) / 2];
+    e.yaw = (sign) => alongZ ? (sign > 0 ? 0 : Math.PI) : (sign > 0 ? Math.PI / 2 : -Math.PI / 2);
+    return e;
+  }
+  // エスカレーター乗り口・降り口に立つ位置（画像px）と向き
+  //  上りレーン（t<0）：s=0 の床から s=L の上階へ。下りレーン（t>0）：s=L の床から s=0 の下階へ。
+  function escPose(e, kind) {
+    const out = 1.4, t = e.W / 4;
+    const pick = {
+      goUp: [-out, -t, 1], goDown: [e.L + out, t, -1],
+      fromBelow: [e.L + out, t, 1], fromAbove: [-out, -t, -1]
+    }[kind];
+    const p = e.P(pick[0], pick[1], 0);
+    return { x: p.x / M, y: p.z / M, heading: e.yaw(pick[2]) };
+  }
+
+  // 区画を横切る場合は、区画の脇を回り込む点を足す（画像px の点列を返す）
+  function aroundWell(e, from, to, side) {
+    const [sa, ta] = e.local(from[0] * M, from[1] * M), [sb, tb] = e.local(to[0] * M, to[1] * M);
+    let hit = false;
+    for (let k = 1; k < 20; k++) {
+      const s = sa + (sb - sa) * k / 20, t = ta + (tb - ta) * k / 20;
+      if (s > -0.2 && s < e.L + 0.2 && Math.abs(t) < e.W / 2 + 0.2) hit = true;
+    }
+    if (!hit) return [];
+    const tSide = side * (e.W / 2 + 1.1), cl = (v) => Math.max(-1.4, Math.min(e.L + 1.4, v));
+    return [e.P(cl(sa), tSide, 0), e.P(cl(sb), tSide, 0)].map((v) => [v.x / M, v.z / M]);
+  }
+
+  function buildEscalator(e) {
+    const g = new THREE.Group();
+    const P = e.P, LW = Math.min(1.5, e.W / 2 - 0.25);
+    const ramp = (s) => Math.min(1, Math.max(0, (s - e.LA) / e.H));
+    const lanes = [];
+    if (e.up) lanes.push({ t: -e.W / 4, h: (s) => ramp(s) * FLOOR_H });
+    if (e.down) lanes.push({ t: e.W / 4, h: (s) => -(1 - ramp(s)) * FLOOR_H });
+    const mat = {
+      step: new THREE.MeshLambertMaterial({ color: 0x5b6067 }),
+      edge: new THREE.MeshBasicMaterial({ color: 0xf2c200 }),
+      metal: new THREE.MeshLambertMaterial({ color: 0xc9ced3, side: THREE.DoubleSide }),
+      glass: new THREE.MeshBasicMaterial({ color: 0xbfe0ee, transparent: true, opacity: 0.35, side: THREE.DoubleSide, depthWrite: false }),
+      rail: new THREE.MeshLambertMaterial({ color: 0x202326 }),
+      wall: new THREE.MeshLambertMaterial({ color: 0xe9e7e2, side: THREE.DoubleSide }),
+      floor: new THREE.MeshLambertMaterial({ color: 0xd9cfbd }),
+      ceil: new THREE.MeshBasicMaterial({ color: 0xf3f3f0, side: THREE.DoubleSide })
+    };
+    // 帯状の面（側面パネル・ガラス）
+    const strip = (t, lo, hi, m) => {
+      const pos = [];
+      for (let s = 0; s < e.L - 1e-6; s += 0.25) {
+        const s2 = Math.min(e.L, s + 0.25);
+        const a = P(s, t, lo(s)), b = P(s2, t, lo(s2)), c = P(s2, t, hi(s2)), d = P(s, t, hi(s));
+        pos.push(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z, a.x, a.y, a.z, c.x, c.y, c.z, d.x, d.y, d.z);
+      }
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+      geo.computeVertexNormals();
+      return new THREE.Mesh(geo, m);
+    };
+    const box = (s0, s1, t0, t1, y0, y1, m) => {
+      const a = P(s0, t0, y0), b = P(s1, t1, y1);
+      const mesh = new THREE.Mesh(new THREE.BoxGeometry(Math.abs(b.x - a.x) || 0.01, Math.abs(b.y - a.y) || 0.01, Math.abs(b.z - a.z) || 0.01), m);
+      mesh.position.set((a.x + b.x) / 2, (a.y + b.y) / 2, (a.z + b.z) / 2);
+      return mesh;
+    };
+    for (const ln of lanes) {
+      const h = ln.h, t0 = ln.t - LW / 2 + 0.15, t1 = ln.t + LW / 2 - 0.15;
+      // ステップ（段差と黄色の縁取り）
+      for (let s = 0; s < e.L - 1e-6; s += 0.4) {
+        const top = Math.max(h(s), h(Math.min(e.L, s + 0.4)));
+        g.add(box(s, Math.min(e.L, s + 0.4), t0, t1, Math.min(h(s), h(Math.min(e.L, s + 0.4))) - 0.6, top, mat.step));
+        if (h(s) !== h(s + 0.4)) g.add(box(s, s + 0.04, t0, t1, top, top + 0.005, mat.edge));
+      }
+      g.add(box(0, 0.05, t0, t1, h(0), h(0) + 0.006, mat.edge));
+      g.add(box(e.L - 0.05, e.L, t0, t1, h(e.L), h(e.L) + 0.006, mat.edge));
+      for (const side of [-1, 1]) {
+        const t = ln.t + side * LW / 2;
+        g.add(strip(t, (s) => h(s) - 0.7, (s) => h(s) + 0.12, mat.metal));       // 側面のステンレス
+        g.add(strip(t, (s) => h(s) + 0.12, (s) => h(s) + 0.92, mat.glass));      // ガラスの欄干
+        // 手すり（黒いベルト）
+        const path = new THREE.CurvePath();
+        for (let s = 0; s < e.L - 1e-6; s += 0.5) path.add(new THREE.LineCurve3(P(s, t, h(s) + 0.95), P(Math.min(e.L, s + 0.5), t, h(Math.min(e.L, s + 0.5)) + 0.95)));
+        g.add(new THREE.Mesh(new THREE.TubeGeometry(path, path.curves.length * 4, 0.045, 6, false), mat.rail));
+      }
+      // トラス（本体）の底面
+      const pos = [];
+      for (let s = 0; s < e.L - 1e-6; s += 0.25) {
+        const s2 = Math.min(e.L, s + 0.25), y1 = h(s) - 0.7, y2 = h(s2) - 0.7;
+        const a = P(s, ln.t - LW / 2, y1), b = P(s2, ln.t - LW / 2, y2), c = P(s2, ln.t + LW / 2, y2), d = P(s, ln.t + LW / 2, y1);
+        pos.push(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z, a.x, a.y, a.z, c.x, c.y, c.z, d.x, d.y, d.z);
+      }
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+      geo.computeVertexNormals();
+      g.add(new THREE.Mesh(geo, mat.metal));
+    }
+    // 下りレーン側の床の吹き抜けと、上りレーン側の天井の吹き抜け（下の階・上の階が見える）
+    const T = e.W / 2;
+    if (e.down) {
+      const s1 = e.L - e.LA;
+      for (const [a0, a1, b0, b1] of [[0, 0, 0, T], [0, s1, T, T], [0, s1, 0, 0]]) {
+        g.add(box(a0, a1 || a0 + 0.02, b0, b1 || b0 + 0.02, -FLOOR_H, 0, mat.wall));
+      }
+      g.add(box(0, s1, 0, T, -FLOOR_H - 0.02, -FLOOR_H, mat.floor));
+      // 吹き抜けまわりのガラス柵
+      g.add(box(0, 0.02, 0, T, 0, 1.1, mat.glass));
+      g.add(box(0, s1, T - 0.02, T, 0, 1.1, mat.glass));
+      g.add(box(0, s1, T - 0.06, T, 1.1, 1.14, mat.metal));
+    }
+    if (e.up) {
+      const s0 = e.LA;
+      for (const [a0, a1, b0, b1] of [[e.L, e.L, -T, 0], [s0, e.L, -T, -T], [s0, s0, -T, 0]]) {
+        g.add(box(a0, a1 === a0 ? a0 + 0.02 : a1, b0, b1, WALL_H, WALL_H + FLOOR_H, mat.wall));
+      }
+      g.add(box(e.L - e.LA, e.L, -T, 0, FLOOR_H - 0.02, FLOOR_H, mat.floor));
+      g.add(box(s0, e.L, -T, 0, WALL_H + FLOOR_H, WALL_H + FLOOR_H + 0.02, mat.ceil));
+    }
+    return g;
+  }
+  // 吹き抜けの穴（床・天井）の範囲。局所座標の長方形を世界座標の [x0,z0,x1,z1] で返す
+  function escHoles(e) {
+    const rect = (s0, s1, t0, t1) => { const a = e.P(s0, t0, 0), b = e.P(s1, t1, 0); return [Math.min(a.x, b.x), Math.min(a.z, b.z), Math.max(a.x, b.x), Math.max(a.z, b.z)]; };
+    return {
+      floor: e.down ? rect(0, e.L - e.LA, 0, e.W / 2) : null,
+      ceil: e.up ? rect(e.LA, e.L, -e.W / 2, 0) : null
+    };
+  }
+  // 穴のあいた平面（床・天井）
+  function planeWithHole(W, D, hole, y, mat, flip) {
+    const sh = new THREE.Shape();
+    const v = (x, z) => flip ? [x, z] : [x, -z];
+    sh.moveTo(...v(0, 0)); sh.lineTo(...v(W, 0)); sh.lineTo(...v(W, D)); sh.lineTo(...v(0, D)); sh.lineTo(...v(0, 0));
+    if (hole) {
+      const [x0, z0, x1, z1] = hole, hp = new THREE.Path();
+      hp.moveTo(...v(x0, z0)); hp.lineTo(...v(x0, z1)); hp.lineTo(...v(x1, z1)); hp.lineTo(...v(x1, z0)); hp.lineTo(...v(x0, z0));
+      sh.holes.push(hp);
+    }
+    const mesh = new THREE.Mesh(new THREE.ShapeGeometry(sh), mat);
+    mesh.rotation.x = flip ? Math.PI / 2 : -Math.PI / 2;
+    mesh.position.y = y;
+    return mesh;
   }
 
   // 床・天井用の模様（キャンバスで作るタイル）
@@ -196,9 +378,10 @@
 
     // 天井の照明・植栽・待合いす（廊下の広い所に）
     const open = (q, r, k) => { for (let dr = -k; dr <= k; dr++) for (let dq = -k; dq <= k; dq++) if (!isW(q + dq, r + dr)) return false; return true; };
+    const nearWell = (q, r) => { for (let dr = -3; dr <= 3; dr++) for (let dq = -3; dq <= 3; dq++) if (walk[(r + dr) * cols + q + dq] === 3) return true; return false; };
     const nearRoute = (q, r, k) => { for (let dr = -k; dr <= k; dr++) for (let dq = -k; dq <= k; dq++) if (walk[(r + dr) * cols + q + dq] === 2) return true; return false; };
     for (let r = 2; r < rows - 2; r++) for (let q = 2; q < cols - 2; q++) {
-      if (!isW(q, r)) continue;
+      if (!isW(q, r) || walk[r * cols + q] === 3 || nearWell(q, r)) continue;
       const x = (q + 0.5) * CELL * M, z = (r + 0.5) * CELL * M;
       if (q % 4 === 2 && r % 4 === 2 && open(q, r, 1)) add("light", m4().makeScale(0.6, 0.02, 1.2).setPosition(x, WALL_H - 0.02, z), null);
       if (nearRoute(q, r, 2)) continue;
@@ -285,17 +468,14 @@
     carve(info, routePts);
     const group = new THREE.Group();
 
-    // 床：木目調のシート
+    // 床：木目調のシート、天井：照明つきの天井材（エスカレーターの所は吹き抜け）
     const W = fl.w * M, D = fl.h * M;
-    const floor = new THREE.Mesh(new THREE.PlaneGeometry(W, D), new THREE.MeshBasicMaterial({ map: tileTexture(floorTile, 256, 2.4, W, D), color: 0xeae4da }));
-    floor.rotation.x = -Math.PI / 2;
-    floor.position.set(fl.w * M / 2, 0, fl.h * M / 2);
-    group.add(floor);
-    // 天井
-    const ceil = new THREE.Mesh(new THREE.PlaneGeometry(W, D), new THREE.MeshBasicMaterial({ map: tileTexture(ceilTile, 64, 0.6, W, D), side: THREE.DoubleSide }));
-    ceil.rotation.x = Math.PI / 2;
-    ceil.position.set(fl.w * M / 2, WALL_H, fl.h * M / 2);
-    group.add(ceil);
+    const holes = info.esc ? escHoles(info.esc) : {};
+    const ftex = tileTexture(floorTile, 256, 2.4, 1, 1);
+    group.add(planeWithHole(W, D, holes.floor, 0, new THREE.MeshBasicMaterial({ map: ftex, color: 0xeae4da }), false));
+    const ctex = tileTexture(ceilTile, 64, 0.6, 1, 1);
+    group.add(planeWithHole(W, D, holes.ceil, WALL_H, new THREE.MeshBasicMaterial({ map: ctex, side: THREE.DoubleSide }), true));
+    if (info.esc) group.add(buildEscalator(info.esc));
     group.add(buildInterior(info));
     info.walk.set(saved);
 
@@ -343,6 +523,32 @@
   }
 
   /* ---------- 視点の列 ---------- */
+  // エスカレーターに乗り降りする所は、区画の中ではなく乗り口・降り口に立つようにする
+  async function prepareRuns(runs) {
+    const out = [];
+    for (let i = 0; i < runs.length; i++) {
+      const r = runs[i], info = await analyzeFloor(r.f), e = info.esc;
+      const nr = { ...r, pts: r.pts.slice() };
+      if (e) {
+        const inWell = ([x, y]) => x * M >= e.x0 - 0.2 && x * M <= e.x1 + 0.2 && y * M >= e.z0 - 0.2 && y * M <= e.z1 + 0.2;
+        if (r.exit && r.exit.lift === "esc") {
+          const p = escPose(e, r.exit.to > r.f ? "goUp" : "goDown");
+          while (nr.pts.length > 1 && inWell(nr.pts[nr.pts.length - 1])) nr.pts.pop();
+          const side = r.exit.to > r.f ? -1 : 1;
+          nr.pts.push(...aroundWell(e, nr.pts[nr.pts.length - 1], [p.x, p.y], side), [p.x, p.y]); nr.endHeading = p.heading;
+        }
+        if (r.enter && r.enter.lift === "esc" && runs[i - 1]) {
+          const p = escPose(e, runs[i - 1].f < r.f ? "fromBelow" : "fromAbove");
+          while (nr.pts.length > 1 && inWell(nr.pts[0])) nr.pts.shift();
+          const side = runs[i - 1].f < r.f ? 1 : -1;
+          nr.pts.unshift([p.x, p.y], ...aroundWell(e, [p.x, p.y], nr.pts[0], side)); nr.startHeading = p.heading;
+        }
+      }
+      out.push(nr);
+    }
+    return out;
+  }
+
   function makeViews(runs) {
     const out = [];
     runs.forEach((r, ri) => {
@@ -359,7 +565,10 @@
       seq.forEach((p, i) => {
         const nxt = seq[i + 1] || seq[i - 1] && [2 * p[0] - seq[i - 1][0], 2 * p[1] - seq[i - 1][1]] || [p[0], p[1] - 1];
         const heading = Math.atan2(nxt[0] - p[0], nxt[1] - p[1]);
-        out.push({ f: r.f, x: p[0], y: p[1], heading, run: ri, last: i === seq.length - 1 });
+        let h = heading;
+        if (i === seq.length - 1 && r.endHeading != null) h = r.endHeading;
+        if (i === 0 && r.startHeading != null && seq.length === 1) h = r.startHeading;
+        out.push({ f: r.f, x: p[0], y: p[1], heading: h, run: ri, last: i === seq.length - 1 });
       });
     });
     return out;
@@ -520,7 +729,13 @@
       if (e.key === "ArrowDown" || e.key === "ArrowLeft") { e.preventDefault(); go(idx - 1); }
     };
     idx = 0;
-    go(0, false);
+    const token = (render.token = (render.token || 0) + 1);
+    prepareRuns(o.runs).then((runs) => {
+      if (token !== render.token || !renderer) return;
+      opts.runs = runs;
+      views = makeViews(runs);
+      go(0, false);
+    });
     const loop = (now) => {
       raf = requestAnimationFrame(loop);
       if (tween) {
