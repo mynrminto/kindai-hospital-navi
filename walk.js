@@ -83,62 +83,172 @@
     }
   }
 
-  function buildWalls(info) {
+  // 床・天井用の模様（キャンバスで作るタイル）
+  function tileTexture(draw, size, repeatM, w, h) {
+    const c = document.createElement("canvas");
+    c.width = c.height = size;
+    draw(c.getContext("2d"), size);
+    const t = new THREE.CanvasTexture(c);
+    t.wrapS = t.wrapT = THREE.RepeatWrapping;
+    t.repeat.set(w / repeatM, h / repeatM);
+    t.anisotropy = renderer.capabilities.getMaxAnisotropy();
+    return t;
+  }
+  const floorTile = (g, n) => {
+    // 明るい木目調の長尺シート
+    g.fillStyle = "#e9dfcd"; g.fillRect(0, 0, n, n);
+    for (let i = 0; i < 4; i++) {
+      g.fillStyle = i % 2 ? "#e7ddcb" : "#ece4d6";
+      g.fillRect(0, i * n / 4, n, n / 4);
+      g.fillStyle = "rgba(150,120,80,.18)"; g.fillRect(0, i * n / 4, n, 1.5);
+      g.fillRect(((i * 97) % n), i * n / 4, 1.5, n / 4);
+    }
+    for (let k = 0; k < 900; k++) {
+      g.fillStyle = `rgba(140,110,70,${Math.random() * 0.06})`;
+      g.fillRect(Math.random() * n, Math.random() * n, 6 + Math.random() * 30, 1);
+    }
+  };
+  const ceilTile = (g, n) => {
+    g.fillStyle = "#f6f6f3"; g.fillRect(0, 0, n, n);
+    g.strokeStyle = "#dcdcd6"; g.lineWidth = 2;
+    g.strokeRect(0, 0, n, n);
+    for (let k = 0; k < 400; k++) { g.fillStyle = "rgba(0,0,0,.035)"; g.fillRect(Math.random() * n, Math.random() * n, 2, 2); }
+  };
+
+  // 安定した疑似乱数（同じ階は毎回同じ配置にする）
+  const hash = (a, b) => { let h = (a * 374761393 + b * 668265263) | 0; h = (h ^ (h >>> 13)) * 1274126177 | 0; return ((h ^ (h >>> 16)) >>> 0) / 4294967296; };
+
+  function buildInterior(info) {
     const { cols, rows, walk, px } = info;
-    const segs = []; // [x, y, w, h, color] 画像px単位、厚み方向は薄く
     const isW = (q, r) => q >= 0 && r >= 0 && q < cols && r < rows && walk[r * cols + q] > 0;
-    const colorAt = (q, r) => {
+    // 壁の向こうが何か：屋外（白）なら窓、部屋なら扉を付ける
+    const sideInfo = (q, r) => {
       const p = px(Math.max(0, q) * CELL + (CELL >> 1), Math.max(0, r) * CELL + (CELL >> 1));
-      // 部屋の色を少し濃くして壁色にする（白・灰は落ち着いたベージュグレーに）
+      const outside = q < 0 || r < 0 || q >= cols || r >= rows || (p[0] > 252 && p[1] > 252 && p[2] > 252);
       const lum = (p[0] + p[1] + p[2]) / 3;
-      if (lum > 240) return [226, 223, 216];
-      if (lum < 120) return [214, 220, 226]; // 文字やアイコンの色は拾わない
-      return p.map((v) => Math.round(v * 0.55 + 255 * 0.45 - 18));
+      let accent = [214, 226, 232];
+      if (lum <= 240 && lum >= 120) {
+        // 部屋の色は彩度を落として落ち着いた腰壁の色にする
+        accent = p.map((v) => Math.round((v * 0.45 + lum * 0.55) * 0.92));
+      }
+      return { outside, accent };
     };
-    // 横向きの壁（上下に廊下でないマスがある辺）を連結
-    for (let r = 0; r <= rows; r++) {
-      for (const side of [-1, 1]) {
-        let start = -1, col = null;
-        for (let q = 0; q <= cols; q++) {
-          const edge = q < cols && isW(q, r) && !isW(q, r + side);
-          if (edge && start < 0) { start = q; col = colorAt(q, r + side); }
-          if (!edge && start >= 0) {
-            const y = (side < 0 ? r : r + 1) * CELL;
-            segs.push([start * CELL, y, (q - start) * CELL, 0, col]);
-            start = -1;
-          }
-        }
+    // 壁の線分：start(m), dir, normal（廊下側）, 長さ(m)
+    const segs = [];
+    const push = (x, y, horiz, len, nx, nz, si) => segs.push({ x: x * M, z: y * M, horiz, len: len * M, nx, nz, ...si });
+    for (let r = 0; r < rows; r++) for (const side of [-1, 1]) {
+      let start = -1, si = null;
+      for (let q = 0; q <= cols; q++) {
+        const edge = q < cols && isW(q, r) && !isW(q, r + side);
+        if (edge && start < 0) { start = q; si = sideInfo(q, r + side); }
+        if (!edge && start >= 0) { push(start * CELL, (side < 0 ? r : r + 1) * CELL, true, (q - start) * CELL, 0, -side, si); start = -1; }
       }
     }
-    for (let q = 0; q <= cols; q++) {
-      for (const side of [-1, 1]) {
-        let start = -1, col = null;
-        for (let r = 0; r <= rows; r++) {
-          const edge = r < rows && isW(q, r) && !isW(q + side, r);
-          if (edge && start < 0) { start = r; col = colorAt(q + side, r); }
-          if (!edge && start >= 0) {
-            const x = (side < 0 ? q : q + 1) * CELL;
-            segs.push([x, start * CELL, 0, (r - start) * CELL, col]);
-            start = -1;
-          }
-        }
+    for (let q = 0; q < cols; q++) for (const side of [-1, 1]) {
+      let start = -1, si = null;
+      for (let r = 0; r <= rows; r++) {
+        const edge = r < rows && isW(q, r) && !isW(q + side, r);
+        if (edge && start < 0) { start = r; si = sideInfo(q + side, r); }
+        if (!edge && start >= 0) { push((side < 0 ? q : q + 1) * CELL, start * CELL, false, (r - start) * CELL, -side, 0, si); start = -1; }
       }
     }
-    const geo = new THREE.BoxGeometry(1, 1, 1);
-    const mat = new THREE.MeshLambertMaterial({ color: 0xffffff });
-    const mesh = new THREE.InstancedMesh(geo, mat, segs.length);
-    const m = new THREE.Matrix4(), color = new THREE.Color();
-    segs.forEach(([x, y, w, h, c], i) => {
-      const t = 0.12;
-      const sx = w ? w * M : t, sz = h ? h * M : t;
-      m.makeScale(sx, WALL_H, sz);
-      m.setPosition((x + w / 2) * M, WALL_H / 2, (y + h / 2) * M);
-      mesh.setMatrixAt(i, m);
-      mesh.setColorAt(i, color.setRGB(c[0] / 255, c[1] / 255, c[2] / 255));
-    });
-    mesh.instanceMatrix.needsUpdate = true;
-    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
-    return mesh;
+
+    // 部品を種類ごとにまとめて InstancedMesh にする
+    const parts = {};
+    const add = (kind, mtx, col) => (parts[kind] = parts[kind] || []).push([mtx, col]);
+    const m4 = () => new THREE.Matrix4();
+    // 線分に沿った箱：along a0〜a1(m)、高さ y0〜y1、壁面から off〜off+depth
+    const onSeg = (sg, a0, a1, y0, y1, off, depth) => {
+      const along = (a0 + a1) / 2, L = a1 - a0, d = off + depth / 2;
+      const cx = sg.x + (sg.horiz ? along : 0) + sg.nx * d, cz = sg.z + (sg.horiz ? 0 : along) + sg.nz * d;
+      const m = m4().makeScale(sg.horiz ? L : depth, y1 - y0, sg.horiz ? depth : L);
+      m.setPosition(cx, (y0 + y1) / 2, cz);
+      return m;
+    };
+    const WOOD = [0.80, 0.66, 0.48], WHITE = [0.96, 0.95, 0.93];
+    for (const sg of segs) {
+      const L = sg.len;
+      // 壁本体（上は白、下1mは部屋の色の腰壁）
+      add("wall", onSeg(sg, 0, L, 0, WALL_H, -0.06, 0.12), WHITE);
+      if (sg.outside) {
+        // 窓：腰より上をガラスに、1.5mごとに縦の桟
+        add("glass", onSeg(sg, 0.05, L - 0.05, 0.85, 2.55, 0.062, 0.01), null);
+        for (let a = 0; a <= L; a += 1.5) add("frame", onSeg(sg, Math.max(0, a - 0.03), Math.min(L, a + 0.03), 0.85, 2.55, 0.06, 0.05), [0.55, 0.6, 0.64]);
+        add("frame", onSeg(sg, 0, L, 0.8, 0.86, 0.06, 0.12), [0.85, 0.85, 0.83]);
+        continue;
+      }
+      add("wall", onSeg(sg, 0, L, 0, 1.0, 0.06, 0.012), sg.accent.map((v) => v / 255));
+      // 扉：長い壁には約7mごとに引き戸。扉の間に手すり
+      const doors = [];
+      if (L >= 2.6) for (let a = 1.2; a + 1.3 < L; a += 7) doors.push(a);
+      let prev = 0.2;
+      for (const a of doors) {
+        add("door", onSeg(sg, a, a + 1.2, 0, 2.15, 0.07, 0.04), hash(Math.round(sg.x * 10), Math.round(sg.z * 10)) < 0.5 ? WOOD : [0.88, 0.86, 0.82]);
+        add("frame", onSeg(sg, a - 0.06, a + 1.26, 2.15, 2.22, 0.06, 0.06), [0.62, 0.62, 0.6]);
+        add("frame", onSeg(sg, a + 0.95, a + 1.0, 0.95, 1.25, 0.11, 0.03), [0.45, 0.45, 0.45]); // 取っ手
+        add("plate", onSeg(sg, a + 0.3, a + 0.9, 2.3, 2.45, 0.06, 0.02), null);               // 室名札
+        if (a - 0.15 > prev) add("rail", onSeg(sg, prev, a - 0.15, 0.82, 0.88, 0.1, 0.06), WOOD);
+        prev = a + 1.35;
+      }
+      if (L - 0.2 > prev) add("rail", onSeg(sg, prev, L - 0.2, 0.82, 0.88, 0.1, 0.06), WOOD);
+      add("frame", onSeg(sg, 0, L, 0, 0.08, 0.06, 0.02), [0.62, 0.6, 0.57]); // 幅木
+    }
+
+    // 天井の照明・植栽・待合いす（廊下の広い所に）
+    const open = (q, r, k) => { for (let dr = -k; dr <= k; dr++) for (let dq = -k; dq <= k; dq++) if (!isW(q + dq, r + dr)) return false; return true; };
+    const nearRoute = (q, r, k) => { for (let dr = -k; dr <= k; dr++) for (let dq = -k; dq <= k; dq++) if (walk[(r + dr) * cols + q + dq] === 2) return true; return false; };
+    for (let r = 2; r < rows - 2; r++) for (let q = 2; q < cols - 2; q++) {
+      if (!isW(q, r)) continue;
+      const x = (q + 0.5) * CELL * M, z = (r + 0.5) * CELL * M;
+      if (q % 4 === 2 && r % 4 === 2 && open(q, r, 1)) add("light", m4().makeScale(0.6, 0.02, 1.2).setPosition(x, WALL_H - 0.02, z), null);
+      if (nearRoute(q, r, 2)) continue;
+      const h = hash(q, r);
+      if (open(q, r, 4) && q % 6 === 0 && r % 5 === 0 && h < 0.75) {
+        // 待合のいす（3人掛け×2列）
+        for (const dz of [-0.45, 0.45]) {
+          for (const dx of [-0.6, 0, 0.6]) {
+            add("seat", m4().makeScale(0.5, 0.08, 0.45).setPosition(x + dx, 0.44, z + dz), null);
+            add("seat", m4().makeScale(0.5, 0.42, 0.06).setPosition(x + dx, 0.66, z + dz + (dz < 0 ? -0.2 : 0.2)), null);
+          }
+          add("frame", m4().makeScale(1.8, 0.4, 0.06).setPosition(x, 0.2, z + dz), [0.6, 0.62, 0.64]);
+        }
+      } else if (!open(q, r, 1) && open(q, r, 0) && h < 0.025) {
+        add("pot", m4().makeScale(0.42, 0.45, 0.42).setPosition(x, 0.225, z), null);
+        add("leaf", m4().makeScale(0.55, 0.75, 0.55).setPosition(x, 0.95, z), null);
+        add("leaf", m4().makeScale(0.4, 0.5, 0.4).setPosition(x + 0.12, 1.35, z - 0.05), null);
+      }
+    }
+
+    const geos = {
+      box: new THREE.BoxGeometry(1, 1, 1),
+      pot: new THREE.CylinderGeometry(0.5, 0.4, 1, 16),
+      leaf: new THREE.IcosahedronGeometry(0.5, 1)
+    };
+    const mats = {
+      wall: new THREE.MeshLambertMaterial({ color: 0xffffff }),
+      door: new THREE.MeshLambertMaterial({ color: 0xffffff }),
+      frame: new THREE.MeshLambertMaterial({ color: 0xffffff }),
+      rail: new THREE.MeshLambertMaterial({ color: 0xffffff }),
+      glass: new THREE.MeshBasicMaterial({ color: 0xcfe5f1 }),
+      plate: new THREE.MeshBasicMaterial({ color: 0x004f80 }),
+      light: new THREE.MeshBasicMaterial({ color: 0xffffff }),
+      seat: new THREE.MeshLambertMaterial({ color: 0x3f7f9a }),
+      pot: new THREE.MeshLambertMaterial({ color: 0xf2efe8 }),
+      leaf: new THREE.MeshLambertMaterial({ color: 0x5d9b5a, flatShading: true })
+    };
+    const group = new THREE.Group();
+    const color = new THREE.Color();
+    for (const [kind, list] of Object.entries(parts)) {
+      const mesh = new THREE.InstancedMesh(geos[kind] || geos.box, mats[kind], list.length);
+      list.forEach(([mtx, c], i) => {
+        mesh.setMatrixAt(i, mtx);
+        if (c) mesh.setColorAt(i, color.setRGB(c[0], c[1], c[2]));
+      });
+      mesh.instanceMatrix.needsUpdate = true;
+      if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+      group.add(mesh);
+    }
+    return group;
   }
 
   // 施設のイラスト（maps/illust/）
@@ -169,25 +279,24 @@
   }
   async function buildFloor(f) {
     const info = await analyzeFloor(f);
-    const { fl, img } = info;
+    const { fl } = info;
     const routePts = opts.runs.filter((r) => r.f === f).flatMap((r) => r.pts);
     const saved = info.walk.slice();
     carve(info, routePts);
     const group = new THREE.Group();
 
-    // 床：フロアマップそのもの
-    const tex = new THREE.Texture(img); tex.needsUpdate = true;
-    tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
-    const floor = new THREE.Mesh(new THREE.PlaneGeometry(fl.w * M, fl.h * M), new THREE.MeshBasicMaterial({ map: tex }));
+    // 床：木目調のシート
+    const W = fl.w * M, D = fl.h * M;
+    const floor = new THREE.Mesh(new THREE.PlaneGeometry(W, D), new THREE.MeshBasicMaterial({ map: tileTexture(floorTile, 256, 2.4, W, D), color: 0xeae4da }));
     floor.rotation.x = -Math.PI / 2;
     floor.position.set(fl.w * M / 2, 0, fl.h * M / 2);
     group.add(floor);
     // 天井
-    const ceil = new THREE.Mesh(new THREE.PlaneGeometry(fl.w * M, fl.h * M), new THREE.MeshBasicMaterial({ color: 0xf3f3f0, side: THREE.DoubleSide }));
+    const ceil = new THREE.Mesh(new THREE.PlaneGeometry(W, D), new THREE.MeshBasicMaterial({ map: tileTexture(ceilTile, 64, 0.6, W, D), side: THREE.DoubleSide }));
     ceil.rotation.x = Math.PI / 2;
     ceil.position.set(fl.w * M / 2, WALL_H, fl.h * M / 2);
     group.add(ceil);
-    group.add(buildWalls(info));
+    group.add(buildInterior(info));
     info.walk.set(saved);
 
     // 看板（施設名）と写真
@@ -213,7 +322,22 @@
         if (a.distanceTo(b) > 1e-3) path.add(new THREE.LineCurve3(a, b));
       }
       if (!path.curves.length) continue;
-      group.add(new THREE.Mesh(new THREE.TubeGeometry(path, path.curves.length * 16, 0.12, 6, false), new THREE.MeshBasicMaterial({ color: 0xe72510 })));
+      // 床の誘導ライン（平たい帯）と進む向きの矢印
+      const line = new THREE.Mesh(new THREE.TubeGeometry(path, path.curves.length * 16, 0.13, 8, false), new THREE.MeshBasicMaterial({ color: 0xe72510 }));
+      line.scale.y = 0.12;
+      group.add(line);
+      const len = path.getLength();
+      const arrowGeo = new THREE.ConeGeometry(0.11, 0.28, 3);
+      arrowGeo.rotateX(Math.PI / 2);
+      const arrowMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+      for (let d = 1; d < len; d += 1.5) {
+        const t = d / len, p = path.getPointAt(t), tan = path.getTangentAt(t);
+        const ar = new THREE.Mesh(arrowGeo, arrowMat);
+        ar.position.set(p.x, 0.012, p.z);
+        ar.scale.y = 0.15;
+        ar.rotation.y = Math.atan2(tan.x, tan.z);
+        group.add(ar);
+      }
     }
     return group;
   }
@@ -378,12 +502,13 @@
     renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.setSize(w, h);
-    renderer.setClearColor(0xeef3f6);
+    renderer.setClearColor(0xf4f4f1);
     stage.appendChild(renderer.domElement);
     scene = new THREE.Scene();
-    scene.fog = new THREE.Fog(0xeef3f6, 18, 70);
-    scene.add(new THREE.HemisphereLight(0xffffff, 0xb9c4cc, 0.95));
-    const sun = new THREE.DirectionalLight(0xffffff, 0.35); sun.position.set(0.4, 1, 0.6); scene.add(sun);
+    scene.fog = new THREE.Fog(0xf4f4f1, 14, 55);
+    scene.add(new THREE.HemisphereLight(0xfffdf6, 0xc9c2b4, 0.85));
+    scene.add(new THREE.AmbientLight(0xffffff, 0.2));
+    const sun = new THREE.DirectionalLight(0xffffff, 0.3); sun.position.set(0.4, 1, 0.6); scene.add(sun);
     camera = new THREE.PerspectiveCamera(70, w / h, 0.05, 200);
     bindLook(stage);
     hud.querySelector(".w-prev").onclick = () => { stopAuto(); go(idx - 1); };
