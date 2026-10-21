@@ -116,42 +116,35 @@ select:focus-visible, button:focus-visible, input:focus-visible + .sw { outline:
 }
 .tabs button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
 
-.mapwrap { background: var(--bg); border-radius: 14px; border: 1px solid var(--line); overflow: hidden; }
-#map { display: block; width: 100%; height: auto; }
-#map text { font-family: inherit; fill: var(--ink); }
-.flabel { font-size: 11px; fill: var(--muted) !important; }
-.bld rect { fill: var(--bld); stroke: var(--bld-line); stroke-width: 1.2; }
-.bld.off rect { fill: none; stroke-dasharray: 4 4; opacity: .55; }
-.bld.off text { opacity: .4; }
-.bname { font-size: 11px; font-weight: 700; fill: var(--muted) !important; }
-.core { fill: var(--card); stroke: var(--bld-line); }
-.coretxt { font-size: 9px; font-weight: 700; text-anchor: middle; fill: var(--muted) !important; }
-.esc { fill: var(--card); stroke: var(--bld-line); stroke-dasharray: 2 2; }
-.deck { fill: color-mix(in srgb, var(--accent) 10%, transparent); stroke: var(--bld-line); stroke-dasharray: 5 3; }
-.decklabel, .halllabel { font-size: 10px; text-anchor: middle; fill: var(--muted) !important; }
-.decklabel { writing-mode: vertical-rl; }
-.hall { fill: var(--bld); stroke: var(--bld-line); }
-.corr { stroke: var(--bld-line); stroke-width: 10; stroke-linecap: round; }
-.tile rect { fill: var(--tile); stroke: var(--line); }
-.tile text { text-anchor: middle; fill: var(--ink); }
-.tile.from rect { fill: color-mix(in srgb, var(--from) 16%, var(--tile)); stroke: var(--from); stroke-width: 2; }
-.tile.to rect { fill: color-mix(in srgb, var(--to) 14%, var(--tile)); stroke: var(--to); stroke-width: 2; }
-.tile.from text, .tile.to text { font-weight: 700; }
-.route-bg { fill: none; stroke: var(--card); stroke-width: 9; stroke-linecap: round; stroke-linejoin: round; }
-.route { fill: none; stroke: var(--route); stroke-width: 4.5; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 10 7; animation: flow 1s linear infinite; }
-@keyframes flow { to { stroke-dashoffset: -17; } }
+.mapwrap { background: #fff; border-radius: 14px; border: 1px solid var(--line); overflow: hidden; position: relative; }
+.maphead { display: flex; justify-content: space-between; align-items: center; padding: 8px 10px; border-bottom: 1px solid var(--line); background: var(--card); }
+.floorname { font-weight: 700; font-size: 16px; color: var(--accent); }
+.ghost { font: inherit; font-size: 13px; border: 1px solid var(--line); background: var(--card); color: var(--accent); padding: 5px 10px; border-radius: 8px; cursor: pointer; }
+#map { display: block; width: 100%; height: auto; aspect-ratio: 4 / 3; background: #fff; touch-action: manipulation; }
+#map text { font-family: inherit; }
+.route-bg { fill: none; stroke: #fff; stroke-width: 30; stroke-linecap: round; stroke-linejoin: round; opacity: .9; }
+.route { fill: none; stroke: #e2502f; stroke-width: 16; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 34 22; animation: flow 1.2s linear infinite; }
+@keyframes flow { to { stroke-dashoffset: -56; } }
 @media (prefers-reduced-motion: reduce) { .route { animation: none; } }
-.transfer { fill: var(--card); stroke: var(--route); stroke-width: 3; }
-.badge rect { fill: var(--route); }
-.badge text { fill: #fff !important; font-size: 10px; font-weight: 700; text-anchor: middle; }
-.pin { stroke: #fff; stroke-width: 2; }
-.pin.from { fill: var(--from); }
-.pin.to { fill: var(--to); }
+.lift { fill: #fff; stroke: #e2502f; stroke-width: 9; }
+.badge rect { fill: #e2502f; }
+.badge.sub rect { fill: #4b5a58; }
+.badge text { fill: #fff; font-size: 26px; font-weight: 700; text-anchor: middle; }
+.pin .halo { opacity: .25; }
+.pin.from circle { fill: #1f8a4c; }
+.pin.to circle { fill: #c8102e; }
+.pin circle:not(.halo) { stroke: #fff; stroke-width: 6; }
+.pin text { fill: #fff; font-size: 24px; font-weight: 700; text-anchor: middle; }
+.mapnav { display: flex; justify-content: space-between; padding: 8px 10px; border-top: 1px solid var(--line); background: var(--card); }
+.mapnav button { font: inherit; font-size: 14px; border: 1px solid var(--line); background: var(--card); color: var(--accent); padding: 6px 12px; border-radius: 8px; cursor: pointer; }
+.mapnav button:disabled { opacity: .35; cursor: default; }
+.tabs .arrow { color: inherit; opacity: .6; margin-right: 4px; }
+.meta .fl { font-weight: 700; }
 
 .steps { list-style: none; margin: 14px 0 0; padding: 0; display: grid; gap: 2px; }
 .steps li { display: flex; gap: 12px; align-items: flex-start; padding: 10px 10px; border-radius: 10px; cursor: pointer; font-size: 15px; }
 .steps li.cur { background: var(--accent-soft); }
-.steps .ic { width: 26px; height: 26px; flex: none; border-radius: 50%; display: grid; place-items: center; font-size: 13px; font-weight: 700; background: var(--bg); color: var(--accent); border: 1px solid var(--line); }
+.steps .ic { width: 30px; height: 30px; font-size: 11px !important; flex: none; border-radius: 50%; display: grid; place-items: center; font-size: 13px; font-weight: 700; background: var(--bg); color: var(--accent); border: 1px solid var(--line); }
 .steps li.start .ic { color: var(--from); }
 .steps li.goal .ic { color: var(--to); }
 .steps li.ev .ic, .steps li.esc .ic { background: var(--accent); color: #fff; border-color: var(--accent); }

@@ -49,7 +49,15 @@
     <div class="summary" id="summary"></div>
     <div class="tabs" id="tabs" role="tablist" aria-label="表示する階"></div>
     <div class="mapwrap">
-      <svg id="map" viewBox="0 0 430 370" role="img" aria-label="フロア模式図"></svg>
+      <div class="maphead">
+        <span class="floorname" id="floorname"></span>
+        <button type="button" class="ghost" id="zoom">フロア全体を見る</button>
+      </div>
+      <svg id="map" viewBox="0 0 1758 1060" role="img" aria-label="公式フロアマップ上の経路"></svg>
+      <div class="mapnav">
+        <button type="button" id="prev" aria-label="前の階">‹ 前の階</button>
+        <button type="button" id="next" aria-label="次の階">次の階 ›</button>
+      </div>
     </div>
     <ol class="steps" id="steps"></ol>
     <div class="actions">
@@ -59,18 +67,18 @@
 
   <section class="card empty" id="empty">
     <p>上で <b>いまいる場所</b> と <b>行きたい場所</b> を選ぶと、通る階と道順を表示します。</p>
-    <p class="hint">駅から来た方は「駅からのデッキ入口」を選んでください。初めての受診は <b>2号館3階 総合受付</b> へ。</p>
+    <p class="hint">駅から来た方は「駅デッキ側 中央出入口」を選んでください。初めての受診は <b>2号館3階 総合受付</b> へ。</p>
   </section>
 
   <section class="note">
     <h2>ご利用にあたって</h2>
     <ul>
-      <li>診療科・施設の <b>階と建物</b> は近畿大学病院 公式サイトのフロアマップ（2026年10月時点）に基づきます。</li>
-      <li>建物同士の <b>位置関係・連絡通路・エレベーター/エスカレーターの位置・距離と所要時間</b> は公開情報からの <b>推定</b> です。実際の院内表示とスタッフの案内を優先してください。</li>
-      <li>トイレ・AED・自動支払機などは各階にありますが、正確な場所は院内の案内表示をご確認ください。</li>
-      <li>正式な情報：<a href="https://www.med.kindai.ac.jp/floormap_facility.html" target="_blank" rel="noopener">公式フロアマップ</a> ／ <a href="https://www.med.kindai.ac.jp/traffic_access.html" target="_blank" rel="noopener">交通アクセス</a></li>
+      <li>地図は近畿大学病院 公式サイトの<a href="https://www.med.kindai.ac.jp/floormap_facility.html" target="_blank" rel="noopener">フロアマップ</a>の画像を使用しています（2026年10月時点）。</li>
+      <li>廊下・エレベーター・入口の位置は公式マップから読み取っています。<b>駅デッキがつながる出入口、7号館（管理棟）への行き方、所要時間は推定</b>です。</li>
+      <li>工事や混雑で通れない場合があります。実際の院内表示とスタッフの案内を優先してください。</li>
+      <li>交通アクセス：<a href="https://www.med.kindai.ac.jp/traffic_access.html" target="_blank" rel="noopener">公式サイト</a></li>
     </ul>
-    <p class="fine">本アプリは近畿大学・近畿大学病院とは関係のない個人による非公式ツールです。</p>
+    <p class="fine">地図画像の著作権は近畿大学病院に帰属します。本アプリは近畿大学・近畿大学病院とは関係のない個人による非公式ツールです。</p>
   </section>
 </main>
 

@@ -5,255 +5,224 @@
   const SVGNS = "http://www.w3.org/2000/svg";
 
   const WALK_MPS = 0.9;      // ゆっくり歩く速さ（m/秒）
-  const EV_WAIT = 45;        // エレベーター待ち時間（秒）
+  const EV_WAIT = 40;        // エレベーター待ち時間（秒）
   const EV_PER_FLOOR = 8;    // 1階あたり（秒）
   const ESC_PER_FLOOR = 25;  // エスカレーター（秒）
 
   const places = H.places;
   const placeById = Object.fromEntries(places.map((p) => [p.id, p]));
-
-  /* ---------- 模式図上の配置 ---------- */
-  // 建物・階ごとに施設タイルを並べる
-  const tiles = {};
-  for (const [bid, b] of Object.entries(H.buildings)) {
-    for (const f of b.floors) {
-      const list = places.filter((p) => p.b === bid && p.f === f);
-      if (!list.length) continue;
-      const [x, y, w, h] = b.rect;
-      const coreBottom = b.core[1] >= y + h / 2;
-      const cols = w > 100 ? 2 : 1;
-      const rows = Math.ceil(list.length / cols);
-      const pad = 7, gap = 5, head = 20, coreSpace = 26;
-      const top = y + head + (coreBottom ? 0 : coreSpace);
-      const avail = h - head - coreSpace - pad;
-      const th = Math.min(40, (avail - gap * (rows - 1)) / rows);
-      const tw = (w - pad * 2 - gap * (cols - 1)) / cols;
-      list.forEach((p, i) => {
-        const c = i % cols, r = Math.floor(i / cols);
-        const tx = x + pad + c * (tw + gap), ty = top + r * (th + gap);
-        tiles[p.id] = { x: tx, y: ty, w: tw, h: th, cx: tx + tw / 2, cy: ty + th / 2 };
-      });
-    }
-  }
-  const deck = placeById.deck;
-  tiles.deck = { x: deck.at[0] - 26, y: deck.at[1] - 12, w: 52, h: 18, cx: deck.at[0], cy: deck.at[1] };
+  const liftById = Object.fromEntries(H.lifts.map((l) => [l.id, l]));
 
   /* ---------- グラフ ---------- */
-  const nodes = {};   // id -> {f, x, y, kind, b?}
-  const adj = {};     // id -> [{to, cost, kind, pts?}]
+  const nodes = {}; // id -> {f, x, y, lift?}
+  const adj = {};
   const addNode = (id, n) => { nodes[id] = n; adj[id] = adj[id] || []; };
-  const addEdge = (a, b, cost, kind, pts) => {
-    adj[a].push({ to: b, cost, kind, pts });
-    adj[b].push({ to: a, cost, kind, pts: pts ? pts.slice().reverse() : undefined });
-  };
-  const walkSec = (px) => (px * H.metersPerPx) / WALK_MPS;
-  const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+  const addEdge = (a, b, cost) => { adj[a].push({ to: b, cost }); adj[b].push({ to: a, cost }); };
+  const walkSec = (a, b) => (Math.hypot(a.x - b.x, a.y - b.y) * H.metersPerPx) / WALK_MPS;
 
-  for (const [bid, b] of Object.entries(H.buildings)) {
-    for (const f of b.floors) addNode(`${bid}@${f}`, { f, x: b.core[0], y: b.core[1], kind: "core", b: bid });
-    for (let i = 0; i < b.floors.length - 1; i++) {
-      const f1 = b.floors[i], f2 = b.floors[i + 1];
-      if (f2 - f1 === 1) addEdge(`${bid}@${f1}`, `${bid}@${f2}`, EV_PER_FLOOR, "ev");
+  for (const [f, list] of Object.entries(H.nodes)) {
+    for (const [name, [x, y]] of Object.entries(list)) addNode(`${f}:${name}`, { f: +f, x, y });
+  }
+  for (const [f, chains] of Object.entries(H.paths)) {
+    for (const chain of chains) {
+      const ids = chain.split("-").map((n) => `${f}:${n}`);
+      for (let i = 0; i < ids.length - 1; i++) {
+        if (!nodes[ids[i]] || !nodes[ids[i + 1]]) throw new Error("unknown node " + ids[i] + " / " + ids[i + 1]);
+        addEdge(ids[i], ids[i + 1], walkSec(nodes[ids[i]], nodes[ids[i + 1]]));
+      }
     }
   }
-  for (const [id, n] of Object.entries(H.nodes)) addNode(id, { ...n, kind: id.startsWith("esc") ? "esc" : "pass" });
-  for (const [a, b, extra = 0] of H.links) addEdge(a, b, walkSec(dist(nodes[a], nodes[b])) + extra, "walk");
-  for (const [a, b] of H.escalators) addEdge(a, b, ESC_PER_FLOOR, "esc");
-
-  for (const p of places) {
-    const t = tiles[p.id];
-    const id = "p:" + p.id;
-    addNode(id, { f: p.f, x: t.cx, y: t.cy, kind: "place", b: p.b });
-    if (p.id === "deck") {
-      addEdge(id, "deckmid", walkSec(dist(nodes[id], nodes.deckmid)) + 60, "walk");
-    } else {
-      const core = nodes[`${p.b}@${p.f}`];
-      const corner = { x: t.cx, y: core.y };
-      const pts = [[t.cx, t.cy], [corner.x, corner.y], [core.x, core.y]];
-      addEdge(id, `${p.b}@${p.f}`, walkSec(Math.abs(t.cy - core.y) + Math.abs(t.cx - core.x)), "walk", pts);
+  // エレベーター・エスカレーター：乗り場ノード ⇔ かご内ノード（待ち時間は乗るときだけ）
+  for (const l of H.lifts) {
+    for (const f of l.floors) {
+      const hall = `${f}:${l.id}`, car = `L:${l.id}:${f}`;
+      addNode(car, { f, x: nodes[hall].x, y: nodes[hall].y, lift: l.id });
+      addEdge(hall, car, l.kind === "ev" ? EV_WAIT / 2 : 2);
     }
+    for (let i = 0; i < l.floors.length - 1; i++) {
+      const f1 = l.floors[i], f2 = l.floors[i + 1];
+      addEdge(`L:${l.id}:${f1}`, `L:${l.id}:${f2}`, (f2 - f1) * (l.kind === "ev" ? EV_PER_FLOOR : ESC_PER_FLOOR));
+    }
+  }
+  for (const p of places) {
+    const id = "p:" + p.id;
+    addNode(id, { f: p.f, x: p.at[0], y: p.at[1], place: p.id });
+    addEdge(id, `${p.f}:${p.via}`, walkSec(nodes[id], nodes[`${p.f}:${p.via}`]));
   }
 
   function shortest(src, dst, barrierFree) {
     const d = { [src]: 0 }, prev = {}, done = new Set();
-    const evState = {}; // エレベーター乗車中かどうか（待ち時間を1回だけ加算）
-    while (true) {
+    for (;;) {
       let u = null, best = Infinity;
       for (const k in d) if (!done.has(k) && d[k] < best) { best = d[k]; u = k; }
       if (u === null || u === dst) break;
       done.add(u);
       for (const e of adj[u]) {
-        if (barrierFree && e.kind === "esc") continue;
-        let c = e.cost;
-        if (e.kind === "ev" && !evState[u]) c += EV_WAIT;
-        const nd = d[u] + c;
-        if (nd < (d[e.to] ?? Infinity)) {
-          d[e.to] = nd; prev[e.to] = { from: u, edge: e };
-          evState[e.to] = e.kind === "ev";
-        }
+        const t = nodes[e.to];
+        if (barrierFree && t.lift && liftById[t.lift].kind === "esc") continue;
+        if (t.place && e.to !== dst) continue; // 他の施設の中は通り抜けない
+        const nd = d[u] + e.cost;
+        if (nd < (d[e.to] ?? Infinity)) { d[e.to] = nd; prev[e.to] = u; }
       }
     }
     if (!(dst in d)) return null;
-    const path = [];
-    for (let v = dst; v !== src; v = prev[v].from) path.unshift({ node: v, via: prev[v].edge, from: prev[v].from });
+    const path = [dst];
+    while (path[0] !== src) path.unshift(prev[path[0]]);
     return { sec: d[dst], path };
   }
 
-  /* ---------- 文言 ---------- */
-  const bName = (bid) => {
-    if (bid === "deck") return "デッキ";
-    const b = H.buildings[bid];
-    return b.sub ? `${b.name}（${b.sub}）` : b.name;
-  };
-  const areaOf = (id) => {
-    const n = nodes[id];
-    if (id === "hall") return "エントランスホール";
-    if (id.startsWith("deck") || id === "p:deck") return "駅デッキ";
-    if (n.kind === "core" || n.kind === "place") return bName(n.b);
-    return null;
-  };
-  const placeLabel = (p) => (p.id === "deck" ? p.name : `${p.name}｜${H.buildings[p.b].name} ${p.f}階`);
-
-  function buildSteps(src, res) {
-    const steps = [];
-    const runs = []; // 階ごとの移動
-    let cur = { f: nodes[src].f, ids: [src], pts: [] };
-    const pushPts = (from, to, edge) => {
-      if (edge.pts) cur.pts.push(...edge.pts);
-      else cur.pts.push([nodes[from].x, nodes[from].y], [nodes[to].x, nodes[to].y]);
-    };
-    for (const s of res.path) {
-      if (s.via.kind === "ev" || s.via.kind === "esc") {
-        runs.push(cur);
-        const last = runs[runs.length - 1];
-        last.exit = { kind: s.via.kind, node: s.from };
-        cur = { f: nodes[s.node].f, ids: [s.node], pts: [], enter: { kind: s.via.kind, node: s.node } };
-      } else {
-        pushPts(s.from, s.node, s.via);
-        cur.ids.push(s.node);
-      }
-    }
-    runs.push(cur);
-
-    // エレベーターの連続をまとめる
-    const merged = [];
-    for (const r of runs) {
-      const prev = merged[merged.length - 1];
-      if (prev && r.ids.length === 1 && r.exit && prev.exit && prev.exit.kind === r.exit.kind) {
-        prev.exit.node = r.exit.node; // 通過階
+  /* ---------- 経路を階ごとに分ける ---------- */
+  function splitRuns(path) {
+    const runs = [];
+    let cur = null;
+    for (let i = 0; i < path.length; i++) {
+      const id = path[i], n = nodes[id];
+      if (n.lift) {
+        // かご内：乗った階と降りた階を記録
+        if (cur && !cur.exit) cur.exit = { lift: n.lift, from: n.f };
         continue;
       }
-      merged.push(r);
+      if (!cur || cur.f !== n.f || cur.exit) {
+        const enter = cur && cur.exit ? { lift: cur.exit.lift } : null;
+        if (cur && cur.exit) cur.exit.to = n.f;
+        cur = { f: n.f, pts: [], ids: [], enter };
+        runs.push(cur);
+      }
+      cur.pts.push([n.x, n.y]);
+      cur.ids.push(id);
     }
+    return runs;
+  }
 
-    const from = placeById[src.slice(2)];
-    steps.push({ kind: "start", text: `<b>${placeLabel(from)}</b> を出発`, f: from.f });
-    merged.forEach((r, i) => {
+  /* ---------- 文言 ---------- */
+  function areaAt(f, x, y) {
+    if (x < 880) return f === 2 && y < 380 ? "6号館" : "1号館";
+    if (f === 2 && x > 1735) return "3号館";
+    return "2号館";
+  }
+  const placeLabel = (p) => p.outside ? `${p.name}（${p.outside}）` : `${p.name}（${p.area === "3階" ? "" : p.area + " "}${p.f}階）`;
+
+  function buildSteps(runs, from, to) {
+    const steps = [{ kind: "start", f: from.f, text: `<b>${from.name}</b>（${from.f}階）を出発` }];
+    runs.forEach((r, i) => {
       const areas = [];
-      for (const id of r.ids) {
-        const a = areaOf(id);
-        if (a && areas[areas.length - 1] !== a) areas.push(a);
+      for (const [x, y] of r.pts) {
+        const a = areaAt(r.f, x, y);
+        if (areas[areas.length - 1] !== a) areas.push(a);
       }
-      const isLast = i === merged.length - 1;
-      if (areas.length > 1) {
-        const via = areas.slice(1, -1);
-        const hasDeck = areas.includes("駅デッキ");
-        steps.push({
-          kind: "walk", f: r.f,
-          text: `${r.f}階：<b>${areas[0]}</b> から${via.length ? ` ${via.join("・")} を通って` : (hasDeck ? "" : " 連絡通路を通って")} <b>${areas[areas.length - 1]}</b> へ`
-        });
-      } else if (!isLast && r.ids.length > 1) {
-        steps.push({ kind: "walk", f: r.f, text: `${r.f}階：${areas[0] || ""}の${r.exit && r.exit.kind === "esc" ? "エスカレーター" : "エレベーター"}へ` });
-      }
+      const cross = areas.length > 1 ? `${areas[0]}から連絡通路を通って${areas[areas.length - 1]}側へ進み、` : "";
       if (r.exit) {
-        const next = merged[i + 1];
-        const toF = next.f;
-        const n = nodes[r.exit.node];
-        if (r.exit.kind === "esc") {
-          steps.push({ kind: "esc", f: r.f, text: `エスカレーターで <b>${toF}階</b> へ${toF > r.f ? "上がる" : "下りる"}` });
-        } else {
-          steps.push({ kind: "ev", f: r.f, text: `${bName(n.b)}のエレベーターで <b>${toF}階</b> へ` });
+        const l = liftById[r.exit.lift];
+        if (r.pts.length > 1) steps.push({ kind: "walk", f: r.f, text: `${r.f}階：${cross}<b>${l.name}</b>へ` });
+        const up = r.exit.to > r.f;
+        steps.push({
+          kind: l.kind, f: r.f,
+          text: l.kind === "esc"
+            ? `エスカレーターで <b>${r.exit.to}階</b> へ${up ? "上がる" : "下りる"}`
+            : `${l.name}で <b>${r.exit.to}階</b> へ`
+        });
+      } else if (i === runs.length - 1) {
+        const lead = r.enter ? `${r.f}階で降りたら、` : `${r.f}階：`;
+        if (to.outside) {
+          steps.push({ kind: "walk", f: r.f, text: `${lead}${cross}<b>駅デッキ側の中央出入口</b>へ` });
+          steps.push({ kind: "walk", f: r.f, text: `出入口からデッキに出て、右手の <b>${to.outside}</b> へ（7号館は公式マップ未掲載のため推定）` });
+        } else if (r.pts.length > 1) {
+          steps.push({ kind: "walk", f: r.f, text: `${lead}${cross}<b>${to.name}</b>へ` });
         }
       }
     });
-    const to = res.path[res.path.length - 1].node;
-    const dest = placeById[to.slice(2)];
-    steps.push({ kind: "goal", text: `<b>${placeLabel(dest)}</b> に到着`, f: dest.f });
-    return { steps, runs: merged };
+    steps.push({ kind: "goal", f: to.f, text: `<b>${placeLabel(to)}</b> に到着` });
+    return steps;
   }
 
   /* ---------- UI ---------- */
   const fromSel = $("from"), toSel = $("to"), bf = $("bf");
 
-  function fillSelect(sel, placeholder) {
-    sel.innerHTML = "";
-    const o = document.createElement("option");
-    o.value = ""; o.textContent = placeholder; sel.appendChild(o);
-    const groups = [];
-    groups.push({ label: "入口", list: [deck] });
-    const floors = [...new Set(places.filter((p) => p.id !== "deck").map((p) => p.f))].sort((a, b) => a - b);
-    for (const f of floors) groups.push({ label: `${f}階`, list: places.filter((p) => p.f === f && p.id !== "deck") });
+  function fillSelect(sel) {
+    sel.innerHTML = '<option value="">選んでください</option>';
+    const groups = [{ label: "入口（3階）", list: places.filter((p) => p.group === "入口") }];
+    for (const f of Object.keys(H.floors).map(Number)) {
+      const list = places.filter((p) => p.f === f && !p.group);
+      if (list.length) groups.push({ label: `${f}階`, list });
+    }
+    groups.push({ label: "病棟", list: places.filter((p) => p.group === "病棟") });
+    groups.push({ label: "7号館（管理棟）", list: places.filter((p) => p.group === "7号館（管理棟）") });
     for (const g of groups) {
       const og = document.createElement("optgroup");
       og.label = g.label;
       for (const p of g.list) {
         const op = document.createElement("option");
         op.value = p.id;
-        op.textContent = p.id === "deck" ? p.name : `${p.name}　${H.buildings[p.b].name}`;
+        op.textContent = p.group === "入口" || p.outside ? p.name : `${p.name}　${p.f}階`;
         og.appendChild(op);
       }
       sel.appendChild(og);
     }
   }
-  fillSelect(fromSel, "選んでください");
-  fillSelect(toSel, "選んでください");
+  fillSelect(fromSel);
+  fillSelect(toSel);
 
   const chips = $("chips");
   for (const id of H.quick) {
     const p = placeById[id];
     const b = document.createElement("button");
-    b.type = "button"; b.className = "chip"; b.textContent = p.short || p.name;
+    b.type = "button"; b.className = "chip"; b.dataset.id = id;
+    b.textContent = p.short || p.name;
     b.addEventListener("click", () => { toSel.value = id; update(); });
     chips.appendChild(b);
   }
 
-  let state = { floors: [], current: 0, res: null, runs: [], src: null, dst: null };
+  let state = { floors: [], runs: [], src: null, dst: null, zoom: true, cur: 0 };
 
   function update(pushUrl = true) {
     const a = fromSel.value, b = toSel.value;
-    for (const c of chips.children) c.classList.toggle("on", H.quick[[...chips.children].indexOf(c)] === b);
+    for (const c of chips.children) c.classList.toggle("on", c.dataset.id === b);
     if (pushUrl) {
       const q = new URLSearchParams();
-      if (a) q.set("from", a); if (b) q.set("to", b); if (bf.checked) q.set("bf", "1");
+      if (a) q.set("from", a);
+      if (b) q.set("to", b);
+      if (bf.checked) q.set("bf", "1");
       history.replaceState(null, "", q.toString() ? "?" + q : location.pathname);
     }
     if (!a || !b) { $("result").hidden = true; $("empty").hidden = false; return; }
     $("empty").hidden = true; $("result").hidden = false;
-    if (a === b) {
-      $("summary").innerHTML = `<p class="same">出発地と目的地が同じです。</p>`;
-      $("tabs").innerHTML = ""; $("steps").innerHTML = ""; drawFloor(placeById[a].f, [], a, b); return;
+
+    const from = placeById[a], to = placeById[b];
+    if (a === b || (from.at[0] === to.at[0] && from.at[1] === to.at[1] && from.f === to.f)) {
+      $("summary").innerHTML = `<p class="same">出発地と目的地が同じ場所です。</p>`;
+      $("steps").innerHTML = "";
+      state = { ...state, floors: [from.f], runs: [], src: a, dst: b };
+      renderTabs(); selectFloor(0);
+      return;
     }
     const res = shortest("p:" + a, "p:" + b, bf.checked);
-    if (!res) { $("summary").innerHTML = `<p class="same">経路が見つかりませんでした。</p>`; return; }
-    const { steps, runs } = buildSteps("p:" + a, res);
+    if (!res) {
+      $("summary").innerHTML = `<p class="same">経路が見つかりませんでした。</p>`;
+      $("steps").innerHTML = ""; $("tabs").innerHTML = ""; $("map").innerHTML = "";
+      return;
+    }
+    const runs = splitRuns(res.path);
     const floors = [];
     for (const r of runs) if (!floors.includes(r.f)) floors.push(r.f);
-    state = { floors, current: 0, res, runs, src: a, dst: b, steps };
+    state = { ...state, floors, runs, src: a, dst: b };
 
     const min = Math.max(1, Math.round(res.sec / 60));
-    const changes = runs.length - 1;
+    const rides = runs.filter((r) => r.exit).length;
     $("summary").innerHTML =
       `<div class="time"><span class="num">約${min}</span><span class="unit">分</span></div>` +
-      `<div class="meta"><span>${floors.map((f) => f + "F").join(" → ")}</span>` +
-      `<span>${changes ? `階の移動 ${changes}回` : "同じ階で移動"}${bf.checked ? "・エレベーターのみ" : ""}</span>` +
-      `<span class="est">所要時間はゆっくり歩いた場合の目安（推定）</span></div>`;
+      `<div class="meta"><span class="fl">${floors.map((f) => f + "階").join(" → ")}</span>` +
+      `<span>${rides ? `エレベーター等 ${rides}回` : "同じ階で移動"}${bf.checked ? "（エレベーターのみ）" : ""}</span>` +
+      `<span class="est">所要時間はゆっくり歩いた場合の目安です</span></div>`;
 
-    $("steps").innerHTML = steps.map((s) => {
-      const icon = { start: "●", goal: "◎", walk: "→", ev: "⇅", esc: "⇡" }[s.kind];
-      return `<li class="${s.kind}" data-f="${s.f ?? ""}"><span class="ic">${icon}</span><span>${s.text}</span></li>`;
-    }).join("");
+    const steps = buildSteps(runs, from, to);
+    const icons = { start: "出", goal: "着", walk: "→", ev: "EV", esc: "ES" };
+    $("steps").innerHTML = steps.map((s) =>
+      `<li class="${s.kind}" data-f="${s.f}"><span class="ic">${icons[s.kind]}</span><span>${s.text}</span></li>`).join("");
     for (const li of $("steps").children) {
-      li.addEventListener("click", () => { const f = +li.dataset.f; if (f && floors.includes(f)) selectFloor(floors.indexOf(f)); });
+      li.addEventListener("click", () => {
+        const i = state.floors.indexOf(+li.dataset.f);
+        if (i >= 0) selectFloor(i);
+      });
     }
     renderTabs();
     selectFloor(0);
@@ -264,18 +233,24 @@
     t.innerHTML = "";
     state.floors.forEach((f, i) => {
       const b = document.createElement("button");
-      b.type = "button"; b.setAttribute("role", "tab"); b.textContent = `${f}階`;
+      b.type = "button"; b.setAttribute("role", "tab");
+      b.innerHTML = `${i ? '<span class="arrow">›</span>' : ""}${f}階`;
       b.addEventListener("click", () => selectFloor(i));
       t.appendChild(b);
     });
   }
 
   function selectFloor(i) {
-    state.current = i;
-    [...$("tabs").children].forEach((b, j) => { b.classList.toggle("on", i === j); b.setAttribute("aria-selected", i === j); });
+    state.cur = i;
+    [...$("tabs").children].forEach((b, j) => {
+      b.classList.toggle("on", i === j);
+      b.setAttribute("aria-selected", String(i === j));
+    });
     const f = state.floors[i];
     [...$("steps").children].forEach((li) => li.classList.toggle("cur", +li.dataset.f === f));
-    drawFloor(f, state.runs.filter((r) => r.f === f), state.src, state.dst);
+    $("prev").disabled = i === 0;
+    $("next").disabled = i >= state.floors.length - 1;
+    drawFloor(f);
   }
 
   function el(tag, attrs, parent, text) {
@@ -286,87 +261,70 @@
     return e;
   }
 
-  function drawFloor(f, runs, src, dst) {
+  function drawFloor(f) {
     const svg = $("map");
+    const fl = H.floors[f];
     svg.innerHTML = "";
-    el("text", { x: 14, y: 366, class: "flabel" }, svg, `${f}階　模式図（配置は推定）`);
+    el("image", { href: fl.img, x: 0, y: 0, width: fl.w, height: fl.h }, svg);
 
-    if (f === 3) {
-      el("rect", { x: 218, y: 222, width: 40, height: 136, rx: 6, class: "deck" }, svg);
-      el("text", { x: 238, y: 336, class: "decklabel" }, svg, "デッキ");
-      el("rect", { x: 200, y: 222, width: 76, height: 30, rx: 6, class: "hall" }, svg);
-      el("text", { x: 238, y: 241, class: "halllabel" }, svg, "エントランス");
-    }
-    // 連絡通路（推定）
-    const corridor = (x1, y1, x2, y2) => el("line", { x1, y1, x2, y2, class: "corr" }, svg);
-    if (f >= 2 && f <= 5) corridor(186, 230, 204, 230);
-    if (f === 2) { corridor(346, 64, 356, 64); corridor(346, 168, 356, 168); }
-    if (f === 3) corridor(258, 300, 276, 300);
-
-    for (const [bid, b] of Object.entries(H.buildings)) {
-      const [x, y, w, h] = b.rect;
-      const has = b.floors.includes(f);
-      const g = el("g", { class: has ? "bld" : "bld off" }, svg);
-      el("rect", { x, y, width: w, height: h, rx: 10 }, g);
-      el("text", { x: x + 8, y: y + 14, class: "bname" }, g, b.name + (b.sub && w > 100 ? ` ${b.sub}` : ""));
-      if (!has) continue;
-      el("rect", { x: b.core[0] - 13, y: b.core[1] - 9, width: 26, height: 18, rx: 4, class: "core" }, g);
-      el("text", { x: b.core[0], y: b.core[1] + 4, class: "coretxt" }, g, "EV");
-    }
-    if (f === 2 || f === 3) {
-      el("rect", { x: 210, y: f === 3 ? 202 : 203, width: 24, height: 16, rx: 4, class: "esc" }, svg);
-      el("text", { x: 222, y: f === 3 ? 214 : 215, class: "coretxt esctxt" }, svg, "ESC");
-    }
-
-    for (const p of places) {
-      if (p.f !== f || p.id === "deck") continue;
-      const t = tiles[p.id];
-      const cls = p.id === src ? "tile from" : p.id === dst ? "tile to" : "tile";
-      const g = el("g", { class: cls }, svg);
-      el("rect", { x: t.x, y: t.y, width: t.w, height: t.h, rx: 6 }, g);
-      const label = p.short || p.name;
-      const fs = Math.min(11, (t.w - 6) / Math.max(label.length, 1) * 1.05, t.h * 0.55);
-      el("text", { x: t.cx, y: t.cy + fs * 0.36, "font-size": fs.toFixed(1) }, g, label);
-      el("title", {}, g, p.name);
-    }
-    if (f === 3) {
-      const cls = src === "deck" ? "tile from" : dst === "deck" ? "tile to" : "tile";
-      const t = tiles.deck;
-      const g = el("g", { class: cls }, svg);
-      el("rect", { x: t.x, y: t.y, width: t.w, height: t.h, rx: 6 }, g);
-      el("text", { x: t.cx, y: t.cy + 3.5, "font-size": 10 }, g, "駅方面");
-    }
+    const runs = state.runs.filter((r) => r.f === f);
+    const from = placeById[state.src], to = placeById[state.dst];
+    const box = [];
 
     for (const r of runs) {
       if (r.pts.length < 2) continue;
-      const d = r.pts.map((p, i) => (i ? "L" : "M") + p[0].toFixed(1) + " " + p[1].toFixed(1)).join(" ");
+      const d = r.pts.map((p, i) => (i ? "L" : "M") + p[0] + " " + p[1]).join(" ");
       el("path", { d, class: "route-bg" }, svg);
       el("path", { d, class: "route" }, svg);
+      box.push(...r.pts);
     }
+    const marker = (x, y, text, cls) => {
+      const g = el("g", { class: "badge " + cls }, svg);
+      const w = text.length * 25 + 34;
+      const bx = Math.max(6, Math.min(fl.w - w - 6, x - w / 2)), by = Math.max(6, y - 92);
+      el("rect", { x: bx, y: by, width: w, height: 50, rx: 25 }, g);
+      el("text", { x: bx + w / 2, y: by + 34 }, g, text);
+      box.push([bx, by], [bx + w, by + 50]);
+    };
     for (const r of runs) {
       if (r.enter) {
-        const n = nodes[r.enter.node];
-        el("circle", { cx: n.x, cy: n.y, r: 7, class: "transfer" }, svg);
+        const [x, y] = r.pts[0];
+        el("circle", { cx: x, cy: y, r: 20, class: "lift" }, svg);
+        marker(x, y, `${liftById[r.enter.lift].kind === "esc" ? "ESC" : "EV"}を降りる`, "sub");
       }
       if (r.exit) {
-        const n = nodes[r.exit.node];
-        el("circle", { cx: n.x, cy: n.y, r: 7, class: "transfer" }, svg);
-        const nf = state.floors[state.floors.indexOf(f) + 1];
-        if (nf) {
-          const g = el("g", { class: "badge" }, svg);
-          const bx = Math.min(n.x + 10, 380), by = n.y - 26;
-          el("rect", { x: bx, y: by, width: 44, height: 18, rx: 9 }, g);
-          el("text", { x: bx + 22, y: by + 12.5 }, g, `${nf}階へ`);
-        }
+        const [x, y] = r.pts[r.pts.length - 1];
+        el("circle", { cx: x, cy: y, r: 20, class: "lift" }, svg);
+        marker(x, y, `${liftById[r.exit.lift].kind === "esc" ? "ESC" : "EV"}で${r.exit.to}階へ`, "main");
       }
     }
-    const pin = (id, cls) => {
-      const p = placeById[id];
+    const pin = (p, cls, label) => {
       if (!p || p.f !== f) return;
-      const t = tiles[id];
-      el("circle", { cx: t.cx, cy: t.cy, r: 5, class: "pin " + cls }, svg);
+      const [x, y] = p.at;
+      const g = el("g", { class: "pin " + cls, transform: `translate(${x} ${y})` }, svg);
+      el("circle", { r: 34, class: "halo" }, g);
+      el("circle", { r: 20 }, g);
+      el("text", { y: 9 }, g, label);
+      box.push([x - 60, y - 60], [x + 60, y + 60]);
     };
-    pin(src, "from"); pin(dst, "to");
+    pin(from, "from", "出");
+    pin(to, "to", "着");
+
+    // 表示範囲：経路に寄る or 全体
+    let vb = [0, 0, fl.w, fl.h];
+    if (state.zoom && box.length) {
+      let x1 = Math.min(...box.map((p) => p[0])), x2 = Math.max(...box.map((p) => p[0]));
+      let y1 = Math.min(...box.map((p) => p[1])), y2 = Math.max(...box.map((p) => p[1]));
+      const pad = 110, aspect = 4 / 3;
+      let w = Math.max(x2 - x1 + pad * 2, 760), h = Math.max(y2 - y1 + pad * 2, 570);
+      if (w / h > aspect) h = w / aspect; else w = h * aspect;
+      w = Math.min(w, fl.w); h = Math.min(h, fl.h);
+      const cx = (x1 + x2) / 2, cy = (y1 + y2) / 2;
+      vb = [Math.max(0, Math.min(fl.w - w, cx - w / 2)), Math.max(0, Math.min(fl.h - h, cy - h / 2)), w, h];
+    }
+    svg.setAttribute("viewBox", vb.map((v) => Math.round(v)).join(" "));
+    $("floorname").textContent = `${f}階`;
+    $("zoom").textContent = state.zoom ? "フロア全体を見る" : "経路に寄る";
   }
 
   /* ---------- イベント ---------- */
@@ -376,6 +334,9 @@
   $("swap").addEventListener("click", () => {
     const a = fromSel.value; fromSel.value = toSel.value; toSel.value = a; update();
   });
+  $("zoom").addEventListener("click", () => { state.zoom = !state.zoom; drawFloor(state.floors[state.cur]); });
+  $("prev").addEventListener("click", () => selectFloor(Math.max(0, state.cur - 1)));
+  $("next").addEventListener("click", () => selectFloor(Math.min(state.floors.length - 1, state.cur + 1)));
   $("share").addEventListener("click", async () => {
     const btn = $("share");
     try { await navigator.clipboard.writeText(location.href); btn.textContent = "コピーしました"; }
