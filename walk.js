@@ -125,6 +125,16 @@
     e.P = (s, t, y) => alongZ ? new THREE.Vector3((x0 + x1) / 2 + t, y, z1 - s) : new THREE.Vector3(x1 - s, y, (z0 + z1) / 2 + t);
     e.local = (x, z) => alongZ ? [z1 - z, x - (x0 + x1) / 2] : [x1 - x, z - (z0 + z1) / 2];
     e.yaw = (sign) => alongZ ? (sign > 0 ? Math.PI : 0) : (sign > 0 ? -Math.PI / 2 : Math.PI / 2);
+    // 区画の両脇のうち、通路として歩ける側（壁と反対側）。回り込みはこちらを通る
+    const openCount = (side) => {
+      let n = 0;
+      for (let s = 0; s <= L; s += 0.7) {
+        const p = e.P(s, side * (W / 2 + 1.0), 0), q = Math.floor(p.x / M / CELL), r = Math.floor(p.z / M / CELL);
+        if (q >= 0 && r >= 0 && q < cols && r < rows && walk[r * cols + q] > 0 && walk[r * cols + q] !== 3) n++;
+      }
+      return n;
+    };
+    e.openSide = openCount(-1) >= openCount(1) ? -1 : 1;
     return e;
   }
   // エスカレーター乗り口・降り口に立つ位置（画像px）と向き
@@ -148,7 +158,7 @@
       if (s > -0.2 && s < e.L + 0.2 && Math.abs(t) < e.W / 2 + 0.2) hit = true;
     }
     if (!hit) return [];
-    const tSide = side * (e.W / 2 + 1.1), cl = (v) => Math.max(-1.4, Math.min(e.L + 1.4, v));
+    const tSide = e.openSide * (e.W / 2 + 1.1), cl = (v) => Math.max(-1.4, Math.min(e.L + 1.4, v));
     return [e.P(cl(sa), tSide, 0), e.P(cl(sb), tSide, 0)].map((v) => [v.x / M, v.z / M]);
   }
 
