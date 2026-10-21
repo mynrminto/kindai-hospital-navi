@@ -250,5 +250,6 @@ select:focus-visible, button:focus-visible, a:focus-visible, input:focus-visible
   .result > .type-h3, .result > .summary, .result > .tabs { grid-column: 1 / -1; }
   .result > .mapwrap { grid-column: 1; grid-row: 4 / span 2; position: sticky; top: 76px; }
   .result > .steps { grid-column: 2; margin-top: 0; }
-  .result > .actions { grid-column: 2; }
+  .result > .actions { grid-column: 2; grid-row: 5; align-self: start; justify-content: flex-start; }
+  .result > .steps { grid-row: 4; }
 }
