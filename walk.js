@@ -1031,7 +1031,7 @@
   function dispose() {
     stopAuto();
     cancelAnimationFrame(raf);
-    if (renderer) { renderer.dispose(); renderer.domElement.remove(); }
+    if (renderer) { renderer.dispose(); renderer.forceContextLoss(); renderer.domElement.remove(); }
     if (root) root.innerHTML = "";
     renderer = scene = camera = floorGroup = null; curFloor = null; views = []; idx = 0;
   }

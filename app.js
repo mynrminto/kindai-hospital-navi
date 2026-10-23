@@ -209,12 +209,18 @@
   let lib3d = null;
   // WebGL が使えるか（使えない端末・アプリ内ブラウザでは3D表示ができない）
   const hasWebGL = () => {
-    try { const c = document.createElement("canvas"); return !!(window.WebGLRenderingContext && (c.getContext("webgl") || c.getContext("experimental-webgl"))); }
+    try {
+      const c = document.createElement("canvas");
+      const gl = c.getContext("webgl2") || c.getContext("webgl") || c.getContext("experimental-webgl");
+      const lose = gl && gl.getExtension("WEBGL_lose_context");
+      if (lose) lose.loseContext(); // 判定用の描画面はすぐ手放す
+      return !!gl;
+    }
     catch (e) { return false; }
   };
   const failMsg = (what, e) => hasWebGL()
     ? `<div class="loading">${what}を表示できませんでした。<br>ページを再読み込みしてお試しください。<small>（${String(e && e.message || e).slice(0, 80)}）</small></div>`
-    : `<div class="loading">この端末・ブラウザでは${what}（WebGL）が使えません。<br>Safari や Chrome で開くか、平面マップをご利用ください。</div>`;
+    : `<div class="loading">このブラウザでは${what}に必要な3D描画（WebGL）がオフになっています。<br>Chrome の場合は「設定 → システム →<br>グラフィック アクセラレーションが使用可能な場合は使用する」をオンにして再起動してください。<br>それまでは平面マップをご利用ください。</div>`;
   const loadScript = (src) => new Promise((ok, ng) => {
     const s = document.createElement("script");
     s.src = src; s.onload = ok; s.onerror = ng;

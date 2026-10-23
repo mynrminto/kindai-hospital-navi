@@ -43,7 +43,7 @@
   function dispose() {
     cancelAnimationFrame(raf);
     if (controls) controls.dispose();
-    if (renderer) { renderer.dispose(); renderer.domElement.remove(); }
+    if (renderer) { renderer.dispose(); renderer.forceContextLoss(); renderer.domElement.remove(); }
     renderer = scene = camera = controls = marker = path = null;
   }
 
