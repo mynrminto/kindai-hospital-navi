@@ -299,8 +299,9 @@
 
 
   /* ---------- 売店（ガラス張りの店構え） ---------- */
-  const SHOP_IDS = ["seven", "greenleaves"];
+  const SHOP_IDS = ["seven", "greenleaves", "cafecore", "cosme", "ffields"];
   const COUNTER_IDS = ["reception"];
+  const CAFE_IDS = ["cafecore", "ffields"]; // 店内を棚でなくテーブル席にする店
   // 店の区画をフロアマップの部屋の色から探し、walk=4 として印を付ける
   function findShops(f, px, cols, rows, walk, W, H, ids = SHOP_IDS, mark = 4) {
     const out = [];
@@ -508,6 +509,8 @@
     const isW = (q, r) => q >= 0 && r >= 0 && q < cols && r < rows && walk[r * cols + q] > 0;
     const cellOf = (q, r) => (q >= 0 && r >= 0 && q < cols && r < rows ? walk[r * cols + q] : 0);
     const shopAt = (q, r) => (info.shops || []).find((sh) => sh.cells.has(r * cols + q));
+    const cafe = new Set();
+    for (const sh of info.shops || []) if (CAFE_IDS.includes(sh.id)) sh.cells.forEach((k) => cafe.add(k));
     // 壁の向こうが何か：屋外（白）なら窓、部屋なら扉を付ける
     const sideInfo = (q, r) => {
       const p = px(Math.max(0, q) * CELL + (CELL >> 1), Math.max(0, r) * CELL + (CELL >> 1));
@@ -527,7 +530,7 @@
       let start = -1, si = null;
       for (let q = 0; q <= cols; q++) {
         const edge = q < cols && isW(q, r) && !isW(q, r + side);
-        if (edge && start < 0) { start = q; si = { ...sideInfo(q, r + side), inShop: cellOf(q, r) === 4, plain: cellOf(q, r) === 5 }; }
+        if (edge && start < 0) { start = q; si = { ...sideInfo(q, r + side), inShop: cellOf(q, r) === 4, cafe: cafe.has(r * cols + q), plain: cellOf(q, r) === 5 }; }
         if (!edge && start >= 0) { push(start * CELL, (side < 0 ? r : r + 1) * CELL, true, (q - start) * CELL, 0, -side, si); start = -1; }
       }
     }
@@ -535,7 +538,7 @@
       let start = -1, si = null;
       for (let r = 0; r <= rows; r++) {
         const edge = r < rows && isW(q, r) && !isW(q + side, r);
-        if (edge && start < 0) { start = r; si = { ...sideInfo(q + side, r), inShop: cellOf(q, r) === 4, plain: cellOf(q, r) === 5 }; }
+        if (edge && start < 0) { start = r; si = { ...sideInfo(q + side, r), inShop: cellOf(q, r) === 4, cafe: cafe.has(r * cols + q), plain: cellOf(q, r) === 5 }; }
         if (!edge && start >= 0) { push((side < 0 ? q : q + 1) * CELL, start * CELL, false, (r - start) * CELL, -side, 0, si); start = -1; }
       }
     }
@@ -585,7 +588,7 @@
       if (sg.inShop) {
         // 店の奥の壁：白い壁に飲料・商品の壁面棚
         add("wall", onSeg(sg, 0, L, 0, WALL_H, -0.06, 0.12), WHITE);
-        if (L > 0.8) add("shelf", onSeg(sg, 0.1, L - 0.1, 0, 2.0, 0.06, 0.55), null);
+        if (L > 0.8 && !sg.cafe) add("shelf", onSeg(sg, 0.1, L - 0.1, 0, 2.0, 0.06, 0.55), null);
         continue;
       }
       // 壁本体（上は白、下1mは部屋の色の腰壁）
@@ -644,6 +647,15 @@
         add("shopfloor", m4().makeScale(CELL * M, 0.01, CELL * M).setPosition(x, 0.006, z), null);
         if (q % 3 === 1 && r % 2 === 1) add("light", m4().makeScale(0.5, 0.02, 1.4).setPosition(x, WALL_H - 0.02, z), null);
         const inner = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [1, -1], [-1, 1]].every(([dq, dr]) => cellOf(q + dq, r + dr) === 4);
+        if (cafe.has(r * cols + q)) {
+          // カフェ：丸テーブルといす2脚
+          if (inner && q % 3 === 1 && r % 3 === 1) {
+            add("frame", m4().makeScale(0.75, 0.04, 0.75).setPosition(x, 0.72, z), WOOD);
+            add("frame", m4().makeScale(0.08, 0.7, 0.08).setPosition(x, 0.35, z), [0.3, 0.3, 0.32]);
+            for (const d of [-0.6, 0.6]) add("seat", m4().makeScale(0.42, 0.45, 0.42).setPosition(x + d, 0.225, z), null);
+          }
+          continue;
+        }
         if (inner && r % 3 === 1) add("shelf", m4().makeScale(CELL * M, 1.45, 0.7).setPosition(x, 0.725, z), null);
         continue;
       }

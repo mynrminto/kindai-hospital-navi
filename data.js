@@ -10,8 +10,8 @@ window.HOSPITAL = {
 
   floors: {
     1: { img: "maps/floor01.png", w: 1758, h: 1200 },
-    2: { img: "maps/floor02.png", w: 1994, h: 1200 },
-    3: { img: "maps/floor03.png", w: 1758, h: 892, offset: [0, 153] }, // 3階の画像は他の階より上に約153pxずれている
+    2: { img: "maps/floor02.png", w: 1994, h: 1430 }, // 下端に7号館2階の簡易図（推定・tools/make_bldg7.js）
+    3: { img: "maps/floor03.png", w: 1758, h: 1270, offset: [0, 153] }, // 3階の画像は他の階より上に約153pxずれている。下端に7号館3階の簡易図（推定）
     4: { img: "maps/floor04.png", w: 1758, h: 1060 },
     5: { img: "maps/floor05.png", w: 1758, h: 1060 },
     6: { img: "maps/floor06.png", w: 1758, h: 1060 },
@@ -33,7 +33,9 @@ window.HOSPITAL = {
       G: [900, 465], H: [958, 468], H2: [980, 468], I: [1140, 468], ev2w: [1142, 600],
       J: [1500, 468], ev2e: [1499, 600], K: [1540, 468], L: [1545, 730],
       D: [600, 690], ev1c: [569, 677], esc: [630, 622], E: [600, 740], M: [940, 735], N: [1236, 730],
-      R1: [1700, 745], R2: [1790, 810], S: [600, 990], W: [215, 675], inner: [430, 720], iL: [300, 720]
+      R1: [1700, 745], R2: [1790, 810], S: [600, 990], W: [215, 675], inner: [430, 720], iL: [300, 720],
+      // 7号館（管理棟）：簡易図（推定）
+      h7: [700, 1273], ev7: [700, 1321]
     },
     3: {
       ev1w: [178, 272], a: [215, 285], T: [400, 285], c: [630, 300],
@@ -42,7 +44,9 @@ window.HOSPITAL = {
       top2: [915, 320], tL: [1150, 320], wcol: [1185, 320], wcol2: [1185, 445], ev2w: [1150, 445], tR: [1440, 320],
       eR: [1440, 445], ev2e: [1494, 445],
       f1: [820, 785], f2: [915, 780], f3: [1045, 780], f4: [1185, 780], f5: [1292, 780], f6: [1318, 780], f7: [1440, 780], f8: [1600, 790],
-      ent_c: [700, 845], ent_l: [327, 862], ent_p: [1318, 858]
+      ent_c: [700, 845], ent_l: [327, 862], ent_p: [1318, 858],
+      // 7号館（管理棟）：簡易図（推定）
+      w7: [700, 940], h7a: [700, 1050], h7: [700, 1120], c7l: [560, 1120], c7r: [880, 1120], ev7: [700, 1168]
     },
     4: {
       ev1w: [176, 425], w: [200, 440], t: [400, 440], c: [600, 450], esc: [622, 617], ev1c: [561, 673], d: [600, 673],
@@ -70,11 +74,11 @@ window.HOSPITAL = {
   // 通路（"a-b-c" は a→b→c とつながる廊下）
   paths: {
     1: ["ev1w-a1-a2", "ev1c-b1"],
-    2: ["ev1w-A-B-C-F-G-H-H2-I-J-K-L", "C-D-E-M-N-L", "E-S", "D-ev1c", "D-esc", "I-ev2w", "J-ev2e",
+    2: ["ev1w-A-B-C-F-G-H-H2-I-J-K-L", "C-D-E-M-N-L", "E-S", "D-ev1c", "D-esc", "I-ev2w", "J-ev2e", "h7-ev7",
         "L-R1-R2", "A-W", "D-inner-iL", "B-B6", "F-F6"],
     3: ["ev1w-a-T-c-top2-tL-wcol-tR", "c-d-e-f1-f2-f3-f4-f5-f6-f7-f8", "d-ev1c", "d-esc",
         "a-L0-L1-L2-entL-B3-Bt-e", "L1-inner-d", "wcol-wcol2-f4", "wcol2-ev2w", "tR-eR-f7", "eR-ev2e",
-        "e-ent_c", "entL-ent_l", "f6-ent_p"],
+        "e-ent_c", "ent_c-w7-h7a-h7-ev7", "h7-c7l", "h7-c7r", "entL-ent_l", "f6-ent_p"],
     4: ["ev1w-w-t-c-x1-x2-x3-x4-x5-ev2w", "c-d-btm", "d-ev1c", "d-esc", "d-inner", "w-lft", "x3-up"],
     5: ["ev1w-w-t-c-x1-x2-x3-x4-x11-x7-x8-x9-x10-x6-x5-x4", "x5-ev2w", "x8-ev2e", "c-d-btmR-btm",
         "d-ev1c", "d-esc", "d-inner", "w-l1-l2-btm"],
@@ -91,6 +95,7 @@ window.HOSPITAL = {
     { id: "ev1c", name: "1号館 中央エレベーター", kind: "ev", floors: [1, 2, 3, 4, 5, 6] },
     { id: "ev2w", name: "2号館 西EV", kind: "ev", floors: [2, 3, 4, 5, 6, 7, 8, 9, 10] },
     { id: "ev2e", name: "2号館 東EV", kind: "ev", floors: [2, 3, 5, 6, 7, 8, 9, 10] },
+    { id: "ev7", name: "7号館 エレベーター", kind: "ev", floors: [2, 3] },
     { id: "esc", name: "1号館 エスカレーター", kind: "esc", floors: [2, 3, 4, 5, 6] }
   ],
 
@@ -193,10 +198,10 @@ window.HOSPITAL = {
     { id: "w10wb", name: "10西B病棟（循環器内科）", f: 10, at: [1070, 860], via: "x6", area: "2号館", group: "病棟" },
     { id: "w10eb", name: "10東B病棟（外科（上部・下部））", f: 10, at: [1530, 860], via: "x9", area: "2号館", group: "病棟" },
 
-    // 7号館（管理棟）：公式フロアマップ画像に掲載がないため、駅デッキ側出入口までを案内
-    { id: "cafecore", name: "CAFE CORE（カフェ・コア）", f: 3, at: [700, 860], via: "ent_c", area: "7号館", group: "7号館（管理棟）", outside: "7号館（管理棟）3階" },
-    { id: "cosme", name: "化粧品コーナー・西村眼鏡店・ヘアケア", f: 3, at: [700, 860], via: "ent_c", area: "7号館", group: "7号館（管理棟）", outside: "7号館（管理棟）3階" },
-    { id: "ffields", name: "ffields（エフフィールド）", f: 3, at: [700, 860], via: "ent_c", area: "7号館", group: "7号館（管理棟）", outside: "7号館（管理棟）2階" }
+    // 7号館（管理棟）：公式フロアマップに掲載がないため、公式サイトの施設案内から起こした簡易図（推定）
+    { id: "cafecore", name: "CAFE CORE（カフェ・コア）", f: 3, at: [535, 1050], via: "c7l", area: "7号館", group: "7号館（管理棟）" },
+    { id: "cosme", name: "化粧品コーナー・西村眼鏡店・ヘアケア", f: 3, at: [880, 1050], via: "c7r", area: "7号館", group: "7号館（管理棟）" },
+    { id: "ffields", name: "ffields（エフフィールド）", f: 2, at: [715, 1200], via: "h7", area: "7号館", group: "7号館（管理棟）" }
   ],
 
   // 設備（公式フロアマップのアイコン位置）。行き先の「目的」から最寄りを探すのに使う

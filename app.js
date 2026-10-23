@@ -116,6 +116,7 @@
 
   /* ---------- 文言 ---------- */
   function areaAt(f, x, y) {
+    if ((f === 3 && y > 880) || (f === 2 && y > 1100)) return "7号館";
     if (x < 880) return f === 2 && y < 380 ? "6号館" : "1号館";
     if (f === 2 && x > 1735) return "3号館";
     return "2号館";
@@ -135,7 +136,9 @@
         const a = areaAt(r.f, x, y);
         if (areas[areas.length - 1] !== a) areas.push(a);
       }
-      const cross = areas.length > 1 ? `${areas[0]}から連絡通路を通って${areas[areas.length - 1]}側へ進み、` : "";
+      const into7 = areas.length > 1 && areas[areas.length - 1] === "7号館";
+      const cross = into7 ? "駅デッキ側の中央出入口から連絡通路を通って7号館（管理棟）へ進み、"
+        : areas.length > 1 ? `${areas[0]}から連絡通路を通って${areas[areas.length - 1]}側へ進み、` : "";
       if (r.exit) {
         const l = liftById[r.exit.lift];
         if (r.pts.length > 1) steps.push({ kind: "walk", f: r.f, text: `${r.f}階：${cross}<b>${l.name}</b>へ` });
